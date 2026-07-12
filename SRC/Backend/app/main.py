@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+import os
+from datetime import date, datetime, timedelta, timezone
 from threading import RLock
 from typing import Any, Literal
 from uuid import uuid4
@@ -8,12 +9,17 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, Header, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from jose import JWTError, jwt
+from passlib.context import CryptContext
 
 
 VehicleStatus = Literal["Available", "On Trip", "In Shop", "Retired"]
 DriverStatus = Literal["Available", "On Trip", "Off Duty", "Suspended"]
 TripStatus = Literal["Draft", "Dispatched", "Completed", "Cancelled"]
 Role = Literal["Fleet Manager", "Dispatcher", "Safety Officer", "Financial Analyst", "Administrator"]
+JWT_SECRET = os.getenv("TRANSITOPS_JWT_SECRET", "transitops-local-demo-secret-change-in-production")
+JWT_ALGORITHM = "HS256"
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 class LoginRequest(BaseModel):
@@ -30,6 +36,7 @@ class VehicleInput(BaseModel):
     acquisition_cost: float = Field(ge=0)
     region: str = "Ahmedabad"
     status: VehicleStatus = "Available"
+    image_position: int = Field(default=0, ge=0, le=3)
 
 
 class DriverInput(BaseModel):
@@ -41,6 +48,7 @@ class DriverInput(BaseModel):
     safety_score: float = Field(ge=0, le=100)
     status: DriverStatus = "Available"
     region: str = "Ahmedabad"
+    photo_position: int = Field(default=0, ge=0, le=3)
 
 
 class TripInput(BaseModel):
@@ -93,23 +101,24 @@ class DemoStore:
 
     def __init__(self) -> None:
         self.lock = RLock()
+        demo_password = pwd_context.hash("demo")
         self.users = [
-            {"id": "u-fleet", "name": "Raven Kapoor", "email": "fleet@transitops.demo", "role": "Fleet Manager"},
-            {"id": "u-dispatch", "name": "Aarav Shah", "email": "dispatcher@transitops.demo", "role": "Dispatcher"},
-            {"id": "u-safety", "name": "Priya Iyer", "email": "safety@transitops.demo", "role": "Safety Officer"},
-            {"id": "u-finance", "name": "Ishaan Mehta", "email": "finance@transitops.demo", "role": "Financial Analyst"},
+            {"id": "u-fleet", "name": "Raven Kapoor", "email": "fleet@transitops.demo", "role": "Fleet Manager", "password_hash": demo_password},
+            {"id": "u-dispatch", "name": "Aarav Shah", "email": "dispatcher@transitops.demo", "role": "Dispatcher", "password_hash": demo_password},
+            {"id": "u-safety", "name": "Priya Iyer", "email": "safety@transitops.demo", "role": "Safety Officer", "password_hash": demo_password},
+            {"id": "u-finance", "name": "Ishaan Mehta", "email": "finance@transitops.demo", "role": "Financial Analyst", "password_hash": demo_password},
         ]
         self.vehicles = [
-            {"id": "v-van05", "registration": "GJ 01 AB 1234", "name": "Van-05", "vehicle_type": "Van", "capacity_kg": 500, "odometer_km": 42850, "acquisition_cost": 850000, "region": "Ahmedabad", "status": "Available"},
-            {"id": "v-truck11", "registration": "GJ 01 CD 8871", "name": "Truck-11", "vehicle_type": "Truck", "capacity_kg": 5000, "odometer_km": 119340, "acquisition_cost": 2250000, "region": "Ahmedabad", "status": "On Trip"},
-            {"id": "v-mini03", "registration": "GJ 27 MN 2203", "name": "Mini-03", "vehicle_type": "Mini Truck", "capacity_kg": 1200, "odometer_km": 67830, "acquisition_cost": 1180000, "region": "Surat", "status": "In Shop"},
-            {"id": "v-car02", "registration": "GJ 01 EF 4132", "name": "Car-02", "vehicle_type": "Car", "capacity_kg": 300, "odometer_km": 91500, "acquisition_cost": 620000, "region": "Ahmedabad", "status": "Retired"},
+            {"id": "v-van05", "registration": "GJ 01 AB 1234", "name": "Van-05", "vehicle_type": "Van", "capacity_kg": 500, "odometer_km": 42850, "acquisition_cost": 850000, "region": "Ahmedabad", "status": "Available", "image_position": 0},
+            {"id": "v-truck11", "registration": "GJ 01 CD 8871", "name": "Truck-11", "vehicle_type": "Truck", "capacity_kg": 5000, "odometer_km": 119340, "acquisition_cost": 2250000, "region": "Ahmedabad", "status": "On Trip", "image_position": 1},
+            {"id": "v-mini03", "registration": "GJ 27 MN 2203", "name": "Mini-03", "vehicle_type": "Mini Truck", "capacity_kg": 1200, "odometer_km": 67830, "acquisition_cost": 1180000, "region": "Surat", "status": "In Shop", "image_position": 2},
+            {"id": "v-car02", "registration": "GJ 01 EF 4132", "name": "Car-02", "vehicle_type": "Car", "capacity_kg": 300, "odometer_km": 91500, "acquisition_cost": 620000, "region": "Ahmedabad", "status": "Retired", "image_position": 3},
         ]
         self.drivers = [
-            {"id": "d-alex", "name": "Alex Thomas", "license_number": "GJ-DRV-1088", "license_category": "LMV", "license_expiry": "2027-10-14", "contact": "+91 98765 32010", "safety_score": 94, "status": "Available", "region": "Ahmedabad"},
-            {"id": "d-rahul", "name": "Rahul Patel", "license_number": "GJ-DRV-1205", "license_category": "HMV", "license_expiry": "2027-03-22", "contact": "+91 98765 10222", "safety_score": 88, "status": "On Trip", "region": "Ahmedabad"},
-            {"id": "d-neha", "name": "Neha Desai", "license_number": "GJ-DRV-1779", "license_category": "LMV", "license_expiry": "2025-12-08", "contact": "+91 98765 76111", "safety_score": 91, "status": "Off Duty", "region": "Surat"},
-            {"id": "d-samir", "name": "Samir Khan", "license_number": "GJ-DRV-1882", "license_category": "HMV", "license_expiry": "2027-06-01", "contact": "+91 98765 45789", "safety_score": 72, "status": "Suspended", "region": "Ahmedabad"},
+            {"id": "d-alex", "name": "Alex Thomas", "license_number": "GJ-DRV-1088", "license_category": "LMV", "license_expiry": "2027-10-14", "contact": "+91 98765 32010", "safety_score": 94, "status": "Available", "region": "Ahmedabad", "photo_position": 0},
+            {"id": "d-rahul", "name": "Rahul Patel", "license_number": "GJ-DRV-1205", "license_category": "HMV", "license_expiry": "2027-03-22", "contact": "+91 98765 10222", "safety_score": 88, "status": "On Trip", "region": "Ahmedabad", "photo_position": 1},
+            {"id": "d-neha", "name": "Neha Desai", "license_number": "GJ-DRV-1779", "license_category": "LMV", "license_expiry": "2025-12-08", "contact": "+91 98765 76111", "safety_score": 91, "status": "Off Duty", "region": "Surat", "photo_position": 2},
+            {"id": "d-samir", "name": "Samir Khan", "license_number": "GJ-DRV-1882", "license_category": "HMV", "license_expiry": "2027-06-01", "contact": "+91 98765 45789", "safety_score": 72, "status": "Suspended", "region": "Ahmedabad", "photo_position": 3},
         ]
         self.trips = [
             {"id": "TR-1042", "source": "Ahmedabad Depot", "destination": "Vadodara Hub", "vehicle_id": "v-truck11", "driver_id": "d-rahul", "cargo_kg": 3200, "planned_distance_km": 112, "actual_distance_km": None, "revenue": 18500, "notes": "Priority retail replenishment", "status": "Dispatched", "created_at": "2026-07-12T08:15:00", "completed_at": None, "cancellation_reason": None},
@@ -130,6 +139,9 @@ class DemoStore:
             {"id": "e-2", "category": "Miscellaneous", "amount": 150, "vehicle_id": "v-van05", "trip_id": "TR-1043", "date": "2026-07-10", "notes": "Loading supplies"},
         ]
         self.preferences = {"depot_name": "Gandhinagar Depot, Gujarat", "currency": "INR", "distance_unit": "Kilometres"}
+        self.revoked_tokens: set[str] = set()
+        self.login_attempts: dict[str, list[datetime]] = {}
+        self.audit_events: list[dict[str, Any]] = []
 
     @staticmethod
     def by_id(items: list[dict[str, Any]], item_id: str) -> dict[str, Any]:
@@ -150,16 +162,47 @@ app.add_middleware(
 )
 
 
+def public_user(user: dict[str, Any]) -> dict[str, Any]:
+    return {key: user[key] for key in ("id", "name", "email", "role")}
+
+
+def audit(user: dict[str, Any], action: str, target: str) -> None:
+    store.audit_events.append({"id": str(uuid4()), "actor_id": user["id"], "action": action, "target": target, "at": datetime.now(timezone.utc).isoformat()})
+
+
 def current_user(authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    if not authorization or not authorization.startswith("Bearer demo-"):
+    if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Please sign in to continue.")
-    user_id = authorization.removeprefix("Bearer demo-")
-    return DemoStore.by_id(store.users, user_id)
+    token = authorization.removeprefix("Bearer ")
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id, token_id = payload.get("sub"), payload.get("jti")
+        if not user_id or not token_id or token_id in store.revoked_tokens:
+            raise JWTError("Invalid session")
+        user = dict(DemoStore.by_id(store.users, user_id))
+        user["token_id"] = token_id
+        return user
+    except (JWTError, ValueError):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Your session is invalid or expired. Please sign in again.")
 
 
 def require(user: dict[str, Any], *roles: Role) -> None:
     if user["role"] not in roles:
         raise HTTPException(status_code=403, detail="Your role does not have permission for this action.")
+
+
+READ_ROLES: dict[str, tuple[Role, ...]] = {
+    "vehicles": ("Fleet Manager", "Dispatcher", "Administrator"),
+    "drivers": ("Fleet Manager", "Dispatcher", "Safety Officer", "Administrator"),
+    "trips": ("Fleet Manager", "Dispatcher", "Safety Officer", "Administrator"),
+    "maintenance": ("Fleet Manager", "Administrator"),
+    "finance": ("Fleet Manager", "Financial Analyst", "Administrator"),
+    "analytics": ("Fleet Manager", "Financial Analyst", "Administrator"),
+}
+
+
+def require_read(user: dict[str, Any], resource: str) -> None:
+    require(user, *READ_ROLES[resource])
 
 
 def decorated_trip(trip: dict[str, Any]) -> dict[str, Any]:
@@ -204,10 +247,26 @@ def health() -> dict[str, str]:
 
 @app.post("/api/auth/login")
 def login(payload: LoginRequest) -> dict[str, Any]:
+    now = datetime.now(timezone.utc)
+    attempts = [item for item in store.login_attempts.get(str(payload.email).lower(), []) if now - item < timedelta(minutes=15)]
+    if len(attempts) >= 5:
+        raise HTTPException(status_code=429, detail="Too many failed sign-in attempts. Try again in 15 minutes.")
     user = next((user for user in store.users if user["email"] == str(payload.email).lower()), None)
-    if not user:
-        raise HTTPException(status_code=401, detail="Use one of the seeded TransitOps demo accounts.")
-    return {"access_token": f"demo-{user['id']}", "user": user}
+    if not user or not pwd_context.verify(payload.password, user["password_hash"]):
+        store.login_attempts[str(payload.email).lower()] = attempts + [now]
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+    store.login_attempts.pop(str(payload.email).lower(), None)
+    token_id = str(uuid4())
+    token = jwt.encode({"sub": user["id"], "jti": token_id, "exp": now + timedelta(hours=8)}, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    audit(user, "session.login", user["id"])
+    return {"access_token": token, "user": public_user(user)}
+
+
+@app.post("/api/auth/logout", status_code=204)
+def logout(user: dict[str, Any] = Depends(current_user)) -> Response:
+    store.revoked_tokens.add(user["token_id"])
+    audit(user, "session.logout", user["id"])
+    return Response(status_code=204)
 
 
 @app.get("/api/dashboard")
@@ -232,6 +291,7 @@ def dashboard(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
 
 @app.get("/api/vehicles")
 def list_vehicles(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, Any]]:
+    require_read(user, "vehicles")
     return store.vehicles
 
 
@@ -272,6 +332,7 @@ def retire_vehicle(vehicle_id: str, user: dict[str, Any] = Depends(current_user)
 
 @app.get("/api/drivers")
 def list_drivers(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, Any]]:
+    require_read(user, "drivers")
     return store.drivers
 
 
@@ -301,6 +362,7 @@ def update_driver(driver_id: str, payload: DriverInput, user: dict[str, Any] = D
 
 @app.get("/api/trips")
 def list_trips(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, Any]]:
+    require_read(user, "trips")
     return [decorated_trip(trip) for trip in sorted(store.trips, key=lambda trip: trip["created_at"], reverse=True)]
 
 
@@ -363,6 +425,7 @@ def cancel(trip_id: str, user: dict[str, Any] = Depends(current_user)) -> dict[s
 
 @app.get("/api/maintenance")
 def list_maintenance(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, Any]]:
+    require_read(user, "maintenance")
     return [decorated_maintenance(record) for record in store.maintenance]
 
 
@@ -401,6 +464,7 @@ def close_maintenance(maintenance_id: str, user: dict[str, Any] = Depends(curren
 
 @app.get("/api/finance")
 def finance(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    require_read(user, "finance")
     def fuel(log: dict[str, Any]) -> dict[str, Any]:
         return {**log, "vehicle": store.by_id(store.vehicles, log["vehicle_id"])["name"]}
     def expense(item: dict[str, Any]) -> dict[str, Any]:
@@ -429,6 +493,7 @@ def add_expense(payload: ExpenseInput, user: dict[str, Any] = Depends(current_us
 
 @app.get("/api/analytics")
 def analytics(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    require_read(user, "analytics")
     fuel_cost = sum(item["cost"] for item in store.fuel_logs)
     maintenance_cost = sum(item["cost"] for item in store.maintenance)
     total_litres = sum(item["liters"] for item in store.fuel_logs)
@@ -449,7 +514,7 @@ def analytics(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
 
 @app.get("/api/analytics/export")
 def export_analytics(user: dict[str, Any] = Depends(current_user)) -> Response:
-    require(user, "Fleet Manager", "Financial Analyst", "Administrator")
+    require_read(user, "analytics")
     rows = ["vehicle,operational_cost"]
     for vehicle in store.vehicles:
         cost = sum(item["cost"] for item in store.fuel_logs if item["vehicle_id"] == vehicle["id"]) + sum(item["cost"] for item in store.maintenance if item["vehicle_id"] == vehicle["id"])
