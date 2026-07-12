@@ -33,6 +33,7 @@ async def seed_demo_data(session: AsyncSession) -> None:
     if not await session.scalar(select(User.id).limit(1)):
         await seed_core_data(session)
     await seed_tracking_data(session)
+    await seed_showcase_data(session)
     await seed_fleet_enrichment(session)
     await seed_driver_profiles(session)
 
@@ -172,6 +173,70 @@ async def seed_tracking_data(session: AsyncSession) -> None:
     ]:
         if not await session.get(Geofence, fence.id):
             session.add(fence)
+
+
+async def seed_showcase_data(session: AsyncSession) -> None:
+    """Add a small, idempotent set of records for a feature-complete demo."""
+    if not await session.get(Role, "role-driver"):
+        session.add(Role(id="role-driver", name="Driver"))
+        await session.flush()
+
+    showcase_vehicles = [
+        Vehicle(id="v-demo-ready", registration="GJ 01 TO 2401", registration_normalized="GJ01TO2401", name="Showcase Van", vehicle_type="Van", capacity_kg=750, odometer_km=18420, acquisition_cost=975000, region="Ahmedabad", depot="Ahmedabad Depot", status="Available", brand="Force", model="Traveller 3350", vin="MA3SHOWCASE2401VAN", fuel_type="Diesel", manufacture_year=2024, color="Ocean Blue"),
+        Vehicle(id="v-demo-live", registration="GJ 01 TO 2402", registration_normalized="GJ01TO2402", name="Showcase Truck", vehicle_type="Truck", capacity_kg=3200, odometer_km=54680, acquisition_cost=2480000, region="Ahmedabad", depot="Ahmedabad Depot", status="On Trip", brand="Tata", model="Ultra T.14", vin="MATSHOWCASE2402TRK", fuel_type="Diesel", manufacture_year=2023, color="Forest Green"),
+        Vehicle(id="v-demo-service", registration="GJ 27 TO 2403", registration_normalized="GJ27TO2403", name="Showcase Mini", vehicle_type="Mini Truck", capacity_kg=1100, odometer_km=36720, acquisition_cost=1260000, region="Surat", depot="Surat Depot", status="In Shop", brand="Mahindra", model="Supro Profit Truck", vin="MA1SHOWCASE2403MIN", fuel_type="Diesel", manufacture_year=2023, color="Amber"),
+    ]
+    showcase_drivers = [
+        Driver(id="d-demo-ready", name="Aditi Kulkarni", license_number="GJ-DRV-2401", license_normalized="GJ-DRV-2401", license_category="LMV", license_expiry=date(2028, 9, 18), contact="+91 98765 24001", safety_score=97, status="Available", region="Ahmedabad", depot="Ahmedabad Depot", photo_url="/images/drivers/neha-desai.png"),
+        Driver(id="d-demo-live", name="Arjun Nair", license_number="GJ-DRV-2402", license_normalized="GJ-DRV-2402", license_category="HMV", license_expiry=date(2028, 2, 11), contact="+91 98765 24002", safety_score=92, status="On Trip", region="Ahmedabad", depot="Ahmedabad Depot", photo_url="/images/drivers/rahul-patel.png"),
+    ]
+    for record in [*showcase_vehicles, *showcase_drivers]:
+        if not await session.get(type(record), record.id):
+            session.add(record)
+    await session.flush()
+
+    now = utc_now()
+    showcase_trips = [
+        Trip(id="TR-DEMO-DRAFT", source="Ahmedabad Depot", destination="Gandhinagar Tech Park", source_latitude=23.0225, source_longitude=72.5714, destination_latitude=23.2156, destination_longitude=72.6369, vehicle_id="v-demo-ready", driver_id="d-demo-ready", cargo_kg=620, planned_distance_km=36, revenue=9400, notes="Ready to demonstrate trip review, capacity validation, and dispatch.", status="Draft", created_at=now - timedelta(minutes=20)),
+        Trip(id="TR-DEMO-LIVE", source="Ahmedabad Depot", destination="Kheda Distribution Centre", source_latitude=23.0225, source_longitude=72.5714, destination_latitude=22.7520, destination_longitude=72.6850, vehicle_id="v-demo-live", driver_id="d-demo-live", cargo_kg=2800, planned_distance_km=59, revenue=15600, notes="Live tracking showcase with an online driver location.", status="Dispatched", created_at=now - timedelta(hours=1, minutes=10)),
+        Trip(id="TR-DEMO-CANCELLED", source="Surat Depot", destination="Bharuch Retail Hub", source_latitude=21.1702, source_longitude=72.8311, destination_latitude=21.7051, destination_longitude=72.9959, vehicle_id="v-demo-service", driver_id="d-demo-ready", cargo_kg=650, planned_distance_km=77, revenue=11000, notes="Historical cancellation example for the operations timeline.", status="Cancelled", created_at=now - timedelta(days=2), cancellation_reason="Vehicle was booked into workshop service."),
+    ]
+    for trip in showcase_trips:
+        if not await session.get(Trip, trip.id):
+            session.add(trip)
+    if not await session.get(Maintenance, "m-demo-service"):
+        session.add(Maintenance(id="m-demo-service", vehicle_id="v-demo-service", service_type="Tyre and brake service", cost=12400, status="In Progress", opened_at=date.today() - timedelta(days=1), notes="Workshop showcase: inspection, tyre rotation, and brake-pad replacement.", vendor="Surat Fleet Care", odometer_km=36720, invoice_reference="SFC-DEMO-2403", priority="High", due_date=date.today() + timedelta(days=1)))
+    await session.flush()
+
+    if not await session.scalar(select(User.id).where(User.email == "driver.showcase@transitops.demo")):
+        session.add(User(id="u-driver-showcase", name="Arjun Nair", email="driver.showcase@transitops.demo", password_hash=password_context.hash("demo"), role_id="role-driver", driver_id="d-demo-live", region="Ahmedabad"))
+        await session.flush()
+
+    received_at = utc_now() - timedelta(seconds=8)
+    tracking_session = await session.get(DriverTrackingSession, "track-demo-showcase")
+    if not tracking_session:
+        session.add(DriverTrackingSession(id="track-demo-showcase", driver_id="d-demo-live", vehicle_id="v-demo-live", trip_id="TR-DEMO-LIVE", started_by_user_id="u-driver-showcase", started_at=now - timedelta(hours=1), status="ACTIVE", consent_recorded_at=now - timedelta(hours=1), consent_version="2026-07", start_reason="DEMO_SEED", last_location_at=received_at, created_at=now - timedelta(hours=1), updated_at=received_at))
+        await session.flush()
+    if not await session.get(VehicleLocationPoint, "loc-demo-showcase-live"):
+        session.add(VehicleLocationPoint(id="loc-demo-showcase-live", tracking_session_id="track-demo-showcase", driver_id="d-demo-live", vehicle_id="v-demo-live", trip_id="TR-DEMO-LIVE", latitude=22.8590, longitude=72.7730, accuracy_meters=9, heading_degrees=132, speed_mps=10.4, captured_at=received_at, received_at=received_at, source="DRIVER_PHONE", idempotency_key="seed-showcase-live", is_mock_location=True, location_metadata={"demo": True, "label": "Showcase live trip"}))
+    latest = await session.get(LatestVehicleLocation, "v-demo-live")
+    if not latest:
+        latest = LatestVehicleLocation(vehicle_id="v-demo-live", trip_id="TR-DEMO-LIVE", driver_id="d-demo-live", tracking_session_id="track-demo-showcase", latitude=22.8590, longitude=72.7730, speed_mps=10.4, heading_degrees=132, accuracy_meters=9, captured_at=received_at, received_at=received_at, freshness_status="ONLINE")
+        session.add(latest)
+    else:
+        latest.trip_id, latest.driver_id, latest.tracking_session_id = "TR-DEMO-LIVE", "d-demo-live", "track-demo-showcase"
+        latest.latitude, latest.longitude, latest.speed_mps = 22.8590, 72.7730, 10.4
+        latest.heading_degrees, latest.accuracy_meters = 132, 9
+        latest.captured_at, latest.received_at, latest.freshness_status = received_at, received_at, "ONLINE"
+
+    finance_records = [
+        FuelLog(id="f-demo-showcase", vehicle_id="v-demo-live", trip_id="TR-DEMO-LIVE", logged_at=date.today(), liters=68, cost=6460, price_per_liter=95, odometer_km=54640, vendor="Indian Oil - Kheda"),
+        Expense(id="e-demo-showcase", category="Toll", amount=780, vehicle_id="v-demo-live", trip_id="TR-DEMO-LIVE", logged_at=date.today(), notes="NH-48 toll receipt for the live showcase trip."),
+    ]
+    for record in finance_records:
+        if not await session.get(type(record), record.id):
+            session.add(record)
+    await session.flush()
 
 
 async def seed_fleet_enrichment(session: AsyncSession) -> None:

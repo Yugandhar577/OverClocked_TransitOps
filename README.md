@@ -92,6 +92,7 @@ The Playwright role suite expects the frontend at `http://127.0.0.1:5173` and AP
 The simulator is intentionally disabled when `ENVIRONMENT=production`.
 
 See [Fleet tracking architecture](docs/FLEET_TRACKING.md) and [Location privacy](docs/LOCATION_PRIVACY.md).
+For a role-by-role walkthrough and one-command verification run, see the [operating workflow](docs/OPERATIONS_WORKFLOW.md).
 
 ## Notes
 
