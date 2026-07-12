@@ -1,7 +1,7 @@
 """add fuel receipt data
 
-Revision ID: 0002_add_fuel_receipts
-Revises: 0001_initial_schema
+Revision ID: 0004_add_fuel_receipts
+Revises: 0003_fleet_enrichment
 Create Date: 2026-07-12
 """
 
@@ -9,8 +9,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0002_add_fuel_receipts"
-down_revision = "0001_initial_schema"
+revision = "0004_add_fuel_receipts"
+down_revision = "0003_fleet_enrichment"
 branch_labels = None
 depends_on = None
 

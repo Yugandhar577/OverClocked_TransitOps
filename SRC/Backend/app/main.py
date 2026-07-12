@@ -1,25 +1,38 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
+import os
 from typing import Annotated, Any, Literal, TypeVar
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Response, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from jose import JWTError, jwt
 from pydantic import BaseModel, EmailStr, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .database import SessionLocal, engine, get_session
-from .models import AuditEvent, Driver, Expense, FuelLog, Maintenance, Preference, Trip, User, Vehicle
+from .models import AuditEvent, Driver, Expense, FuelLog, Maintenance, OdometerLog, Preference, Trip, User, Vehicle, VehicleDocument
 from .seed import password_context, seed_demo_data
+from .tracking import cleanup_expired_locations, end_tracking_for_driver, end_tracking_for_trip, router as tracking_router
+from .routes.fuel_ocr_routes import router as fuel_ocr_router
 
 
 VehicleStatus = Literal["Available", "On Trip", "In Shop", "Retired"]
 DriverStatus = Literal["Available", "On Trip", "Off Duty", "Suspended"]
-RoleName = Literal["Fleet Manager", "Dispatcher", "Safety Officer", "Financial Analyst", "Administrator"]
+RoleName = Literal["Fleet Manager", "Dispatcher", "Safety Officer", "Financial Analyst", "Administrator", "Driver"]
+JWT_SECRET = os.getenv("TRANSITOPS_JWT_SECRET", "transitops-local-demo-secret-change-in-production")
+JWT_ALGORITHM = "HS256"
+TOKEN_TTL_HOURS = 8
+failed_logins: dict[str, list[datetime]] = {}
+revoked_tokens: dict[str, datetime] = {}
+MaintenanceStatus = Literal["Scheduled", "In Progress", "Completed", "Cancelled"]
+MaintenancePriority = Literal["Low", "Normal", "Urgent"]
+FuelType = Literal["Diesel", "Petrol", "CNG", "Electric", "Hybrid"]
+DocumentType = Literal["Insurance", "PUC", "Fitness Certificate", "Permit", "Road Tax", "Lease"]
 
 
 class LoginRequest(BaseModel):
@@ -36,6 +49,13 @@ class VehicleInput(BaseModel):
     acquisition_cost: float = Field(ge=0)
     region: str = "Ahmedabad"
     status: VehicleStatus = "Available"
+    brand: str = Field(default="", max_length=60)
+    model: str = Field(default="", max_length=60)
+    vin: str = Field(default="", max_length=64)
+    fuel_type: FuelType = "Diesel"
+    manufacture_year: int | None = Field(default=None, ge=1900, le=2100)
+    color: str = Field(default="", max_length=40)
+    photo_url: str = Field(default="", max_length=2_000_000)
 
 
 class DriverInput(BaseModel):
@@ -52,6 +72,10 @@ class DriverInput(BaseModel):
 class TripInput(BaseModel):
     source: str = Field(min_length=2, max_length=80)
     destination: str = Field(min_length=2, max_length=80)
+    source_latitude: float | None = Field(default=None, ge=-90, le=90)
+    source_longitude: float | None = Field(default=None, ge=-180, le=180)
+    destination_latitude: float | None = Field(default=None, ge=-90, le=90)
+    destination_longitude: float | None = Field(default=None, ge=-180, le=180)
     vehicle_id: str
     driver_id: str
     cargo_kg: float = Field(gt=0)
@@ -65,6 +89,35 @@ class MaintenanceInput(BaseModel):
     service_type: str = Field(min_length=2, max_length=80)
     cost: float = Field(ge=0)
     notes: str = Field(default="", max_length=500)
+    vendor: str = Field(default="", max_length=80)
+    odometer_km: float | None = Field(default=None, ge=0)
+    invoice_reference: str = Field(default="", max_length=80)
+    priority: MaintenancePriority = "Normal"
+    due_date: date | None = None
+    status: MaintenanceStatus = "In Progress"
+
+
+class OdometerInput(BaseModel):
+    value_km: float = Field(ge=0)
+    logged_at: date | None = None
+
+
+class TripCompletionInput(BaseModel):
+    actual_distance_km: float | None = Field(default=None, gt=0)
+    odometer_km: float | None = Field(default=None, ge=0)
+
+
+class VehicleDocumentInput(BaseModel):
+    document_type: DocumentType
+    reference_number: str = Field(default="", max_length=80)
+    provider: str = Field(default="", max_length=100)
+    start_date: date
+    expiry_date: date
+    cost: float = Field(default=0, ge=0)
+
+
+class VehicleDocumentRenewInput(VehicleDocumentInput):
+    document_type: DocumentType | None = None
 
 
 class FuelInput(BaseModel):
@@ -97,6 +150,19 @@ class PreferencesInput(BaseModel):
     depot_name: str = Field(min_length=2, max_length=100)
     currency: str = Field(min_length=3, max_length=8)
     distance_unit: Literal["Kilometres", "Miles"]
+    live_tracking_enabled: bool = True
+    tracking_update_interval_seconds: int = Field(default=10, ge=5, le=120)
+    tracking_stationary_interval_seconds: int = Field(default=25, ge=10, le=300)
+    tracking_minimum_movement_meters: float = Field(default=20, ge=1, le=1000)
+    tracking_stale_seconds: int = Field(default=60, ge=15, le=3600)
+    tracking_offline_seconds: int = Field(default=180, ge=30, le=86400)
+    tracking_raw_retention_days: int = Field(default=60, ge=1, le=3650)
+    driver_fleet_visibility: Literal["OWN_VEHICLE_ONLY", "SAME_TRIP_GROUP", "SAME_DEPOT_ACTIVE_VEHICLES", "ALL_AUTHORIZED_ACTIVE_VEHICLES"] = "OWN_VEHICLE_ONLY"
+    allow_driver_pause: bool = True
+    allow_driver_nearby_vehicles: bool = False
+    map_provider: Literal["openstreetmap", "mapbox", "google"] = "openstreetmap"
+    directions_provider: Literal["straight_line", "openrouteservice", "mapbox", "google"] = "straight_line"
+    geofence_alerts_enabled: bool = True
 
 
 Session = Annotated[AsyncSession, Depends(get_session)]
@@ -107,23 +173,68 @@ def normalise(value: str) -> str:
 
 
 def user_value(user: User) -> dict[str, Any]:
-    return {"id": user.id, "name": user.name, "email": user.email, "role": user.role.name}
+    return {"id": user.id, "name": user.name, "email": user.email, "role": user.role.name, "driver_id": user.driver_id, "region": user.region}
 
 
 def vehicle_value(vehicle: Vehicle) -> dict[str, Any]:
-    return {"id": vehicle.id, "registration": vehicle.registration, "name": vehicle.name, "vehicle_type": vehicle.vehicle_type, "capacity_kg": vehicle.capacity_kg, "odometer_km": vehicle.odometer_km, "acquisition_cost": vehicle.acquisition_cost, "region": vehicle.region, "status": vehicle.status}
+    return {
+        "id": vehicle.id, "registration": vehicle.registration, "name": vehicle.name,
+        "vehicle_type": vehicle.vehicle_type, "capacity_kg": vehicle.capacity_kg,
+        "odometer_km": vehicle.odometer_km, "acquisition_cost": vehicle.acquisition_cost,
+        "region": vehicle.region, "depot": vehicle.depot, "status": vehicle.status, "brand": vehicle.brand,
+        "model": vehicle.model, "vin": vehicle.vin, "fuel_type": vehicle.fuel_type,
+        "manufacture_year": vehicle.manufacture_year, "color": vehicle.color,
+        "photo_url": vehicle.photo_url,
+    }
 
 
 def driver_value(driver: Driver) -> dict[str, Any]:
-    return {"id": driver.id, "name": driver.name, "license_number": driver.license_number, "license_category": driver.license_category, "license_expiry": driver.license_expiry.isoformat(), "contact": driver.contact, "safety_score": driver.safety_score, "status": driver.status, "region": driver.region}
+    return {"id": driver.id, "name": driver.name, "license_number": driver.license_number, "license_category": driver.license_category, "license_expiry": driver.license_expiry.isoformat(), "contact": driver.contact, "safety_score": driver.safety_score, "status": driver.status, "region": driver.region, "depot": driver.depot}
 
 
 def trip_value(trip: Trip) -> dict[str, Any]:
-    return {"id": trip.id, "source": trip.source, "destination": trip.destination, "vehicle_id": trip.vehicle_id, "driver_id": trip.driver_id, "cargo_kg": trip.cargo_kg, "planned_distance_km": trip.planned_distance_km, "actual_distance_km": trip.actual_distance_km, "revenue": trip.revenue, "notes": trip.notes, "status": trip.status, "created_at": trip.created_at.isoformat(), "completed_at": trip.completed_at.isoformat() if trip.completed_at else None, "cancellation_reason": trip.cancellation_reason}
+    return {"id": trip.id, "source": trip.source, "destination": trip.destination, "source_latitude": trip.source_latitude, "source_longitude": trip.source_longitude, "destination_latitude": trip.destination_latitude, "destination_longitude": trip.destination_longitude, "vehicle_id": trip.vehicle_id, "driver_id": trip.driver_id, "cargo_kg": trip.cargo_kg, "planned_distance_km": trip.planned_distance_km, "actual_distance_km": trip.actual_distance_km, "revenue": trip.revenue, "notes": trip.notes, "status": trip.status, "created_at": trip.created_at.isoformat(), "completed_at": trip.completed_at.isoformat() if trip.completed_at else None, "cancellation_reason": trip.cancellation_reason}
 
 
 def maintenance_value(record: Maintenance) -> dict[str, Any]:
-    return {"id": record.id, "vehicle_id": record.vehicle_id, "service_type": record.service_type, "cost": record.cost, "status": record.status, "opened_at": record.opened_at.isoformat(), "closed_at": record.closed_at.isoformat() if record.closed_at else None, "notes": record.notes}
+    return {
+        "id": record.id, "vehicle_id": record.vehicle_id, "service_type": record.service_type,
+        "cost": record.cost, "status": record.status, "opened_at": record.opened_at.isoformat(),
+        "closed_at": record.closed_at.isoformat() if record.closed_at else None, "notes": record.notes,
+        "vendor": record.vendor, "odometer_km": record.odometer_km,
+        "invoice_reference": record.invoice_reference, "priority": record.priority,
+        "due_date": record.due_date.isoformat() if record.due_date else None,
+        "downtime_days": ((record.closed_at or date.today()) - record.opened_at).days if record.status == "In Progress" or record.closed_at else 0,
+    }
+
+
+def document_status(document: VehicleDocument) -> str:
+    if document.status == "Renewed":
+        return "Renewed"
+    if document.expiry_date < date.today():
+        return "Expired"
+    if document.expiry_date <= date.today() + timedelta(days=30):
+        return "Expiring Soon"
+    return "Active"
+
+
+def document_value(document: VehicleDocument) -> dict[str, Any]:
+    return {
+        "id": document.id, "vehicle_id": document.vehicle_id, "document_type": document.document_type,
+        "reference_number": document.reference_number, "provider": document.provider,
+        "start_date": document.start_date.isoformat(), "expiry_date": document.expiry_date.isoformat(),
+        "cost": document.cost, "status": document_status(document),
+    }
+
+
+async def add_odometer_log(session: AsyncSession, vehicle: Vehicle, value_km: float, source: str, driver_id: str | None = None, logged_at: date | None = None) -> OdometerLog:
+    log = OdometerLog(
+        id=f"odo-{uuid4().hex[:10]}", vehicle_id=vehicle.id, value_km=value_km,
+        source=source, driver_id=driver_id, logged_at=logged_at or date.today(),
+    )
+    session.add(log)
+    vehicle.odometer_km = value_km
+    return log
 
 
 async def decorated_trip(session: AsyncSession, trip: Trip) -> dict[str, Any]:
@@ -135,6 +246,34 @@ async def decorated_trip(session: AsyncSession, trip: Trip) -> dict[str, Any]:
 async def decorated_maintenance(session: AsyncSession, record: Maintenance) -> dict[str, Any]:
     vehicle = await require_record(session, Vehicle, record.vehicle_id)
     return {**maintenance_value(record), "vehicle": vehicle.name}
+
+
+async def collect_alerts(session: AsyncSession) -> list[dict[str, str]]:
+    today = date.today()
+    alert_items: list[dict[str, str]] = []
+    drivers = (await session.scalars(select(Driver))).all()
+    vehicles = {vehicle.id: vehicle for vehicle in (await session.scalars(select(Vehicle))).all()}
+    documents = (await session.scalars(select(VehicleDocument).where(VehicleDocument.status != "Renewed"))).all()
+    maintenance = (await session.scalars(select(Maintenance).where(Maintenance.status.in_(["Scheduled", "In Progress"])))) .all()
+
+    for driver in drivers:
+        if driver.license_expiry < today:
+            alert_items.append({"severity": "critical", "message": f"{driver.name}'s licence expired on {driver.license_expiry:%d %b %Y}.", "entity_type": "driver", "entity_id": driver.id, "link": f"/drivers/{driver.id}"})
+        elif driver.license_expiry <= today + timedelta(days=30):
+            alert_items.append({"severity": "warning", "message": f"{driver.name}'s licence expires on {driver.license_expiry:%d %b %Y}.", "entity_type": "driver", "entity_id": driver.id, "link": f"/drivers/{driver.id}"})
+    for document in documents:
+        vehicle = vehicles[document.vehicle_id]
+        if document.expiry_date < today:
+            alert_items.append({"severity": "critical", "message": f"{vehicle.name} {document.document_type} expired on {document.expiry_date:%d %b %Y}.", "entity_type": "vehicle", "entity_id": vehicle.id, "link": f"/fleet/{vehicle.id}"})
+        elif document.expiry_date <= today + timedelta(days=30):
+            alert_items.append({"severity": "warning", "message": f"{vehicle.name} {document.document_type} expires on {document.expiry_date:%d %b %Y}.", "entity_type": "vehicle", "entity_id": vehicle.id, "link": f"/fleet/{vehicle.id}"})
+    for record in maintenance:
+        vehicle = vehicles[record.vehicle_id]
+        if record.priority == "Urgent":
+            alert_items.append({"severity": "critical", "message": f"Urgent maintenance: {vehicle.name} — {record.service_type} ({record.status}).", "entity_type": "maintenance", "entity_id": record.id, "link": f"/fleet/{vehicle.id}"})
+        if record.status == "In Progress" and record.opened_at < today - timedelta(days=7):
+            alert_items.append({"severity": "critical", "message": f"{vehicle.name} has been In Shop for {(today - record.opened_at).days} days.", "entity_type": "maintenance", "entity_id": record.id, "link": f"/fleet/{vehicle.id}"})
+    return sorted(alert_items, key=lambda item: (item["severity"] != "critical", item["message"]))
 
 
 ModelType = TypeVar("ModelType")
@@ -155,9 +294,18 @@ async def locked_record(session: AsyncSession, model: type[ModelType], record_id
 
 
 async def current_user(session: Session, authorization: str | None = Header(default=None)) -> User:
-    if not authorization or not authorization.startswith("Bearer demo-"):
+    if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Please sign in to continue.")
-    user = await require_record(session, User, authorization.removeprefix("Bearer demo-"))
+    token = authorization.removeprefix("Bearer ")
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        token_id = payload.get("jti")
+        user_id = payload.get("sub")
+        if not token_id or not user_id or token_id in revoked_tokens:
+            raise JWTError("Invalid session")
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Your session is invalid or expired. Please sign in again.")
+    user = await require_record(session, User, user_id)
     if not user.active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Please sign in to continue.")
     return user
@@ -179,30 +327,29 @@ async def audit(session: AsyncSession, user: User, event_type: str, target_type:
 async def lifespan(_: FastAPI):
     async with SessionLocal.begin() as session:
         await seed_demo_data(session)
+        await cleanup_expired_locations(session)
     try:
         yield
     finally:
         await engine.dispose()
 
 
-from .routes.fuel_ocr_routes import router as fuel_ocr_router
-
-
 app = FastAPI(title="TransitOps API", version="0.2.0", lifespan=lifespan)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5174",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-app.mount("/uploads", StaticFiles(directory="app/uploads"), name="uploads")
+app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.mount("/uploads", StaticFiles(directory="app/uploads", check_dir=False), name="uploads")
+app.include_router(tracking_router)
 app.include_router(fuel_ocr_router)
+
+
+@app.middleware("http")
+async def tracking_request_guards(request: Request, call_next):
+    if request.url.path.startswith("/api/tracking"):
+        content_length = int(request.headers.get("content-length", "0") or 0)
+        if content_length > 262_144:
+            return Response(status_code=413, content="Tracking payload is too large.")
+        if os.getenv("ENVIRONMENT", "development") == "production" and request.headers.get("x-forwarded-proto", request.url.scheme) != "https":
+            return Response(status_code=400, content="HTTPS is required for live tracking.")
+    return await call_next(request)
 
 
 @app.get("/api/health")
@@ -212,10 +359,35 @@ async def health() -> dict[str, str]:
 
 @app.post("/api/auth/login")
 async def login(payload: LoginRequest, session: Session) -> dict[str, Any]:
-    user = await session.scalar(select(User).where(User.email == str(payload.email).lower()))
+    now = datetime.now(UTC)
+    email = str(payload.email).lower()
+    attempts = [item for item in failed_logins.get(email, []) if now - item < timedelta(minutes=15)]
+    if len(attempts) >= 5:
+        raise HTTPException(status_code=429, detail="Too many failed sign-in attempts. Try again in 15 minutes.")
+    user = await session.scalar(select(User).where(User.email == email))
     if not user or not user.active or not password_context.verify(payload.password, user.password_hash):
+        failed_logins[email] = [*attempts, now]
         raise HTTPException(status_code=401, detail="Invalid email or password.")
-    return {"access_token": f"demo-{user.id}", "user": user_value(user)}
+    failed_logins.pop(email, None)
+    token_id = uuid4().hex
+    revoked_tokens.update({key: expiry for key, expiry in revoked_tokens.items() if expiry > now})
+    token = jwt.encode({"sub": user.id, "jti": token_id, "exp": now + timedelta(hours=TOKEN_TTL_HOURS)}, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return {"access_token": token, "user": user_value(user)}
+
+
+@app.post("/api/auth/logout", status_code=204, response_class=Response)
+async def logout(user: CurrentUser, session: Session, authorization: str | None = Header(default=None)) -> Response:
+    token = authorization.removeprefix("Bearer ") if authorization else ""
+    try:
+        token_id = jwt.get_unverified_claims(token).get("jti")
+        expiry = datetime.fromtimestamp(jwt.get_unverified_claims(token).get("exp"), UTC)
+        if token_id:
+            revoked_tokens[token_id] = expiry
+    except (JWTError, TypeError, ValueError):
+        pass
+    if user.driver_id:
+        await end_tracking_for_driver(session, user.driver_id, "DRIVER_LOGOUT", user.id)
+    return Response(status_code=204)
 
 
 @app.get("/api/dashboard")
@@ -226,12 +398,41 @@ async def dashboard(user: CurrentUser, session: Session) -> dict[str, Any]:
     active_vehicles = [vehicle for vehicle in vehicles if vehicle.status != "Retired"]
     status_counts = {key: sum(vehicle.status == key for vehicle in vehicles) for key in ["Available", "On Trip", "In Shop", "Retired"]}
     recent = sorted(trips, key=lambda trip: trip.created_at, reverse=True)[:5]
-    return {"kpis": {"activeVehicles": len(active_vehicles), "availableVehicles": status_counts["Available"], "inMaintenance": status_counts["In Shop"], "activeTrips": sum(trip.status == "Dispatched" for trip in trips), "pendingTrips": sum(trip.status == "Draft" for trip in trips), "driversOnDuty": sum(driver.status == "On Trip" for driver in drivers), "utilization": round(status_counts["On Trip"] / len(active_vehicles) * 100) if active_vehicles else 0}, "vehicleStatus": [{"name": key, "value": value} for key, value in status_counts.items()], "recentTrips": [await decorated_trip(session, trip) for trip in recent], "viewer": user_value(user)}
+    active_maintenance = (await session.scalars(select(Maintenance).where(Maintenance.status.in_(["Scheduled", "In Progress"])))).all()
+    alerts = await collect_alerts(session)
+    return {"kpis": {"activeVehicles": len(active_vehicles), "availableVehicles": status_counts["Available"], "inMaintenance": status_counts["In Shop"], "activeTrips": sum(trip.status in ("Dispatched", "In Progress") for trip in trips), "pendingTrips": sum(trip.status == "Draft" for trip in trips), "driversOnDuty": sum(driver.status == "On Trip" for driver in drivers), "urgentMaintenance": sum(record.priority == "Urgent" for record in active_maintenance), "criticalAlerts": sum(item["severity"] == "critical" for item in alerts), "utilization": round(status_counts["On Trip"] / len(active_vehicles) * 100) if active_vehicles else 0}, "vehicleStatus": [{"name": key, "value": value} for key, value in status_counts.items()], "recentTrips": [await decorated_trip(session, trip) for trip in recent], "viewer": user_value(user)}
+
+
+@app.get("/api/alerts")
+async def alerts(_: CurrentUser, session: Session) -> dict[str, Any]:
+    active_alerts = await collect_alerts(session)
+    return {"alerts": active_alerts, "critical_count": sum(item["severity"] == "critical" for item in active_alerts)}
 
 
 @app.get("/api/vehicles")
-async def list_vehicles(_: CurrentUser, session: Session) -> list[dict[str, Any]]:
+async def list_vehicles(user: CurrentUser, session: Session) -> list[dict[str, Any]]:
+    require(user, "Fleet Manager", "Dispatcher", "Administrator")
     return [vehicle_value(vehicle) for vehicle in (await session.scalars(select(Vehicle).order_by(Vehicle.name))).all()]
+
+
+@app.get("/api/vehicles/{vehicle_id}")
+async def vehicle_detail(vehicle_id: str, _: CurrentUser, session: Session) -> dict[str, Any]:
+    vehicle = await require_record(session, Vehicle, vehicle_id)
+    current_trip = await session.scalar(select(Trip).where(Trip.vehicle_id == vehicle.id, Trip.status == "Dispatched").order_by(Trip.created_at.desc()))
+    assigned_driver = await require_record(session, Driver, current_trip.driver_id) if current_trip else None
+    logs = (await session.scalars(select(OdometerLog).where(OdometerLog.vehicle_id == vehicle.id).order_by(OdometerLog.logged_at.desc(), OdometerLog.id.desc()))).all()
+    driver_names = {driver.id: driver.name for driver in (await session.scalars(select(Driver))).all()}
+    documents = (await session.scalars(select(VehicleDocument).where(VehicleDocument.vehicle_id == vehicle.id).order_by(VehicleDocument.expiry_date))).all()
+    maintenance = (await session.scalars(select(Maintenance).where(Maintenance.vehicle_id == vehicle.id).order_by(Maintenance.opened_at.desc()))).all()
+    fuel_cost = await session.scalars(select(FuelLog).where(FuelLog.vehicle_id == vehicle.id))
+    return {
+        **vehicle_value(vehicle),
+        "operational": {"assigned_driver": driver_value(assigned_driver) if assigned_driver else None, "current_trip": await decorated_trip(session, current_trip) if current_trip else None},
+        "odometer_history": [{"id": log.id, "date": log.logged_at.isoformat(), "value_km": log.value_km, "source": log.source, "driver_id": log.driver_id, "driver": driver_names.get(log.driver_id)} for log in logs],
+        "documents": [document_value(document) for document in documents],
+        "maintenance_history": [await decorated_maintenance(session, record) for record in maintenance],
+        "cost_summary": {"fuel": sum(log.cost for log in fuel_cost), "maintenance": sum(record.cost for record in maintenance), "documents": sum(document.cost for document in documents), "total": sum(log.cost for log in fuel_cost) + sum(record.cost for record in maintenance) + sum(document.cost for document in documents)},
+    }
 
 
 @app.post("/api/vehicles", status_code=201)
@@ -242,6 +443,7 @@ async def create_vehicle(payload: VehicleInput, user: CurrentUser, session: Sess
         raise HTTPException(status_code=409, detail="A vehicle with this registration already exists.")
     vehicle = Vehicle(id=f"v-{uuid4().hex[:8]}", registration_normalized=normalized, **payload.model_dump())
     session.add(vehicle)
+    await add_odometer_log(session, vehicle, payload.odometer_km, "manual entry")
     await audit(session, user, "vehicle.created", "vehicle", vehicle.id, None, vehicle_value(vehicle))
     return vehicle_value(vehicle)
 
@@ -257,11 +459,53 @@ async def update_vehicle(vehicle_id: str, payload: VehicleInput, user: CurrentUs
     if duplicate:
         raise HTTPException(status_code=409, detail="A vehicle with this registration already exists.")
     before = vehicle_value(vehicle)
+    odometer_changed = vehicle.odometer_km != payload.odometer_km
     for field, value in payload.model_dump().items():
         setattr(vehicle, field, value)
     vehicle.registration_normalized = normalized
+    if odometer_changed:
+        await add_odometer_log(session, vehicle, payload.odometer_km, "manual entry")
     await audit(session, user, "vehicle.updated", "vehicle", vehicle.id, before, vehicle_value(vehicle))
     return vehicle_value(vehicle)
+
+
+@app.post("/api/vehicles/{vehicle_id}/odometer", status_code=201)
+async def log_vehicle_odometer(vehicle_id: str, payload: OdometerInput, user: CurrentUser, session: Session) -> dict[str, Any]:
+    require(user, "Fleet Manager", "Administrator")
+    vehicle = await locked_record(session, Vehicle, vehicle_id)
+    log = await add_odometer_log(session, vehicle, payload.value_km, "manual entry", logged_at=payload.logged_at)
+    await audit(session, user, "vehicle.odometer_logged", "vehicle", vehicle.id, None, {"value_km": log.value_km, "source": log.source})
+    return {"id": log.id, "date": log.logged_at.isoformat(), "value_km": log.value_km, "source": log.source}
+
+
+@app.post("/api/vehicles/{vehicle_id}/documents", status_code=201)
+async def create_vehicle_document(vehicle_id: str, payload: VehicleDocumentInput, user: CurrentUser, session: Session) -> dict[str, Any]:
+    require(user, "Fleet Manager", "Administrator")
+    await require_record(session, Vehicle, vehicle_id)
+    if payload.expiry_date < payload.start_date:
+        raise HTTPException(status_code=422, detail="The document expiry date cannot be before its start date.")
+    document = VehicleDocument(id=f"doc-{uuid4().hex[:10]}", vehicle_id=vehicle_id, **payload.model_dump(), status="Active")
+    session.add(document)
+    await audit(session, user, "vehicle.document_added", "vehicle_document", document.id, None, document_value(document))
+    return document_value(document)
+
+
+@app.post("/api/vehicle-documents/{document_id}/renew", status_code=201)
+async def renew_vehicle_document(document_id: str, payload: VehicleDocumentRenewInput, user: CurrentUser, session: Session) -> dict[str, Any]:
+    require(user, "Fleet Manager", "Administrator")
+    previous = await locked_record(session, VehicleDocument, document_id)
+    if previous.status == "Renewed":
+        raise HTTPException(status_code=409, detail="This document has already been renewed.")
+    if payload.expiry_date < payload.start_date:
+        raise HTTPException(status_code=422, detail="The document expiry date cannot be before its start date.")
+    before = document_value(previous)
+    previous.status = "Renewed"
+    values = payload.model_dump()
+    values["document_type"] = values["document_type"] or previous.document_type
+    renewed = VehicleDocument(id=f"doc-{uuid4().hex[:10]}", vehicle_id=previous.vehicle_id, **values, status="Active")
+    session.add(renewed)
+    await audit(session, user, "vehicle.document_renewed", "vehicle_document", previous.id, before, {"previous": document_value(previous), "renewed": document_value(renewed)})
+    return {"previous": document_value(previous), "renewed": document_value(renewed)}
 
 
 @app.post("/api/vehicles/{vehicle_id}/retire")
@@ -270,7 +514,7 @@ async def retire_vehicle(vehicle_id: str, user: CurrentUser, session: Session) -
     vehicle = await locked_record(session, Vehicle, vehicle_id)
     if vehicle.status == "On Trip":
         raise HTTPException(status_code=409, detail="Complete or cancel the active trip before retiring this vehicle.")
-    active = await session.scalar(select(Maintenance.id).where(Maintenance.vehicle_id == vehicle_id, Maintenance.status == "Active").limit(1))
+    active = await session.scalar(select(Maintenance.id).where(Maintenance.vehicle_id == vehicle_id, Maintenance.status.in_(["Scheduled", "In Progress"])).limit(1))
     if active:
         raise HTTPException(status_code=409, detail="Close active maintenance before retiring this vehicle.")
     before = vehicle_value(vehicle)
@@ -280,7 +524,8 @@ async def retire_vehicle(vehicle_id: str, user: CurrentUser, session: Session) -
 
 
 @app.get("/api/drivers")
-async def list_drivers(_: CurrentUser, session: Session) -> list[dict[str, Any]]:
+async def list_drivers(user: CurrentUser, session: Session) -> list[dict[str, Any]]:
+    require(user, "Fleet Manager", "Dispatcher", "Safety Officer", "Administrator")
     return [driver_value(driver) for driver in (await session.scalars(select(Driver).order_by(Driver.name))).all()]
 
 
@@ -315,7 +560,8 @@ async def update_driver(driver_id: str, payload: DriverInput, user: CurrentUser,
 
 
 @app.get("/api/trips")
-async def list_trips(_: CurrentUser, session: Session) -> list[dict[str, Any]]:
+async def list_trips(user: CurrentUser, session: Session) -> list[dict[str, Any]]:
+    require(user, "Fleet Manager", "Dispatcher", "Safety Officer", "Administrator")
     trips = (await session.scalars(select(Trip).order_by(Trip.created_at.desc()))).all()
     return [await decorated_trip(session, trip) for trip in trips]
 
@@ -362,14 +608,24 @@ async def release_trip_resources(session: AsyncSession, trip: Trip) -> None:
 
 
 @app.post("/api/trips/{trip_id}/complete")
-async def complete(trip_id: str, user: CurrentUser, session: Session) -> dict[str, Any]:
-    require(user, "Dispatcher", "Fleet Manager", "Administrator")
+async def complete(trip_id: str, user: CurrentUser, session: Session, payload: TripCompletionInput | None = None) -> dict[str, Any]:
     trip = await locked_record(session, Trip, trip_id)
-    if trip.status != "Dispatched":
-        raise HTTPException(status_code=409, detail="Only dispatched trips can be completed.")
+    if user.role.name == "Driver":
+        if not user.driver_id or user.driver_id != trip.driver_id:
+            raise HTTPException(status_code=403, detail="A driver can only complete their own assigned trip.")
+    else:
+        require(user, "Dispatcher", "Fleet Manager", "Administrator")
+    if trip.status not in ("Dispatched", "In Progress"):
+        raise HTTPException(status_code=409, detail="Only dispatched or in-progress trips can be completed.")
     before = trip_value(trip)
     trip.status, trip.completed_at = "Completed", datetime.now(UTC).replace(tzinfo=None)
+    if payload and payload.actual_distance_km is not None:
+        trip.actual_distance_km = payload.actual_distance_km
+    if payload and payload.odometer_km is not None:
+        vehicle = await locked_record(session, Vehicle, trip.vehicle_id)
+        await add_odometer_log(session, vehicle, payload.odometer_km, "trip completion", trip.driver_id)
     await release_trip_resources(session, trip)
+    await end_tracking_for_trip(session, trip.id, "TRIP_COMPLETED", user.id)
     await audit(session, user, "trip.completed", "trip", trip.id, before, trip_value(trip))
     return await decorated_trip(session, trip)
 
@@ -378,11 +634,12 @@ async def complete(trip_id: str, user: CurrentUser, session: Session) -> dict[st
 async def cancel(trip_id: str, user: CurrentUser, session: Session) -> dict[str, Any]:
     require(user, "Dispatcher", "Fleet Manager", "Administrator")
     trip = await locked_record(session, Trip, trip_id)
-    if trip.status not in ("Draft", "Dispatched"):
-        raise HTTPException(status_code=409, detail="Only draft or dispatched trips can be cancelled.")
+    if trip.status not in ("Draft", "Dispatched", "In Progress"):
+        raise HTTPException(status_code=409, detail="Only draft, dispatched, or in-progress trips can be cancelled.")
     before = trip_value(trip)
-    if trip.status == "Dispatched":
+    if trip.status in ("Dispatched", "In Progress"):
         await release_trip_resources(session, trip)
+        await end_tracking_for_trip(session, trip.id, "TRIP_CANCELLED", user.id)
     trip.status, trip.cancellation_reason = "Cancelled", "Cancelled by dispatcher"
     await audit(session, user, "trip.cancelled", "trip", trip.id, before, trip_value(trip))
     return await decorated_trip(session, trip)
@@ -400,31 +657,73 @@ async def create_maintenance(payload: MaintenanceInput, user: CurrentUser, sessi
     vehicle = await locked_record(session, Vehicle, payload.vehicle_id)
     if vehicle.status == "On Trip": raise HTTPException(status_code=409, detail="A vehicle on an active trip cannot enter maintenance.")
     if vehicle.status == "Retired": raise HTTPException(status_code=409, detail="A retired vehicle cannot enter maintenance.")
-    active = await session.scalar(select(Maintenance.id).where(Maintenance.vehicle_id == vehicle.id, Maintenance.status == "Active").limit(1))
+    active = await session.scalar(select(Maintenance.id).where(Maintenance.vehicle_id == vehicle.id, Maintenance.status.in_(["Scheduled", "In Progress"])).limit(1))
     if active: raise HTTPException(status_code=409, detail="This vehicle already has active maintenance.")
-    record = Maintenance(id=f"m-{uuid4().hex[:8]}", **payload.model_dump(), status="Active", opened_at=date.today())
+    record = Maintenance(id=f"m-{uuid4().hex[:8]}", **payload.model_dump(), opened_at=date.today())
     session.add(record)
+    if payload.status == "In Progress":
+        vehicle.status = "In Shop"
+    if payload.odometer_km is not None:
+        await add_odometer_log(session, vehicle, payload.odometer_km, "maintenance")
+    await audit(session, user, "maintenance.scheduled", "maintenance", record.id, None, maintenance_value(record))
+    return await decorated_maintenance(session, record)
+
+
+@app.post("/api/maintenance/{maintenance_id}/start")
+async def start_maintenance(maintenance_id: str, user: CurrentUser, session: Session, payload: OdometerInput | None = None) -> dict[str, Any]:
+    require(user, "Fleet Manager", "Administrator")
+    record = await locked_record(session, Maintenance, maintenance_id)
+    if record.status != "Scheduled":
+        raise HTTPException(status_code=409, detail="Only scheduled maintenance can be started.")
+    vehicle = await locked_record(session, Vehicle, record.vehicle_id)
+    if vehicle.status in ("On Trip", "Retired"):
+        raise HTTPException(status_code=409, detail=f"A {vehicle.status} vehicle cannot enter maintenance.")
+    before = maintenance_value(record)
+    record.status = "In Progress"
     vehicle.status = "In Shop"
-    await audit(session, user, "maintenance.opened", "maintenance", record.id, None, maintenance_value(record))
+    if payload and payload.value_km is not None:
+        record.odometer_km = payload.value_km
+        await add_odometer_log(session, vehicle, payload.value_km, "maintenance", logged_at=payload.logged_at)
+    await audit(session, user, "maintenance.started", "maintenance", record.id, before, maintenance_value(record))
     return await decorated_maintenance(session, record)
 
 
 @app.post("/api/maintenance/{maintenance_id}/close")
-async def close_maintenance(maintenance_id: str, user: CurrentUser, session: Session) -> dict[str, Any]:
+async def close_maintenance(maintenance_id: str, user: CurrentUser, session: Session, payload: OdometerInput | None = None) -> dict[str, Any]:
     require(user, "Fleet Manager", "Administrator")
     record = await locked_record(session, Maintenance, maintenance_id)
-    if record.status != "Active": raise HTTPException(status_code=409, detail="This maintenance record is already closed.")
+    if record.status != "In Progress": raise HTTPException(status_code=409, detail="Only in-progress maintenance can be completed.")
     before = maintenance_value(record)
     record.status, record.closed_at = "Completed", date.today()
     vehicle = await locked_record(session, Vehicle, record.vehicle_id)
-    active = await session.scalar(select(Maintenance.id).where(Maintenance.vehicle_id == vehicle.id, Maintenance.status == "Active", Maintenance.id != record.id).limit(1))
+    if payload and payload.value_km is not None:
+        record.odometer_km = payload.value_km
+        await add_odometer_log(session, vehicle, payload.value_km, "maintenance", logged_at=payload.logged_at)
+    active = await session.scalar(select(Maintenance.id).where(Maintenance.vehicle_id == vehicle.id, Maintenance.status == "In Progress", Maintenance.id != record.id).limit(1))
     if not active and vehicle.status != "Retired": vehicle.status = "Available"
     await audit(session, user, "maintenance.closed", "maintenance", record.id, before, maintenance_value(record))
     return await decorated_maintenance(session, record)
 
 
+@app.post("/api/maintenance/{maintenance_id}/cancel")
+async def cancel_maintenance(maintenance_id: str, user: CurrentUser, session: Session) -> dict[str, Any]:
+    require(user, "Fleet Manager", "Administrator")
+    record = await locked_record(session, Maintenance, maintenance_id)
+    if record.status not in ("Scheduled", "In Progress"):
+        raise HTTPException(status_code=409, detail="Only scheduled or in-progress maintenance can be cancelled.")
+    before = maintenance_value(record)
+    record.status, record.closed_at = "Cancelled", date.today()
+    vehicle = await locked_record(session, Vehicle, record.vehicle_id)
+    active = await session.scalar(select(Maintenance.id).where(Maintenance.vehicle_id == vehicle.id, Maintenance.status == "In Progress", Maintenance.id != record.id).limit(1))
+    if not active and vehicle.status == "In Shop":
+        vehicle.status = "Available"
+    await audit(session, user, "maintenance.cancelled", "maintenance", record.id, before, maintenance_value(record))
+    return await decorated_maintenance(session, record)
+
+
 @app.get("/api/finance")
-async def finance(_: CurrentUser, session: Session) -> dict[str, Any]:
+async def finance(user: CurrentUser, session: Session) -> dict[str, Any]:
+    require(user, "Fleet Manager", "Financial Analyst", "Administrator")
     fuel_logs = (await session.scalars(select(FuelLog).order_by(FuelLog.logged_at.desc()))).all()
     expenses = (await session.scalars(select(Expense).order_by(Expense.logged_at.desc()))).all()
     maintenance = (await session.scalars(select(Maintenance))).all()
@@ -437,10 +736,11 @@ async def finance(_: CurrentUser, session: Session) -> dict[str, Any]:
 @app.post("/api/finance/fuel", status_code=201)
 async def add_fuel(payload: FuelInput, user: CurrentUser, session: Session) -> dict[str, Any]:
     require(user, "Financial Analyst", "Fleet Manager", "Administrator")
-    await require_record(session, Vehicle, payload.vehicle_id)
-    if payload.trip_id: await require_record(session, Trip, payload.trip_id)
+    vehicle = await locked_record(session, Vehicle, payload.vehicle_id)
+    trip = await require_record(session, Trip, payload.trip_id) if payload.trip_id else None
     record = FuelLog(id=f"f-{uuid4().hex[:8]}", **payload.model_dump())
     session.add(record)
+    await add_odometer_log(session, vehicle, payload.odometer_km, "fuel log", trip.driver_id if trip else None)
     return {"id": record.id, **payload.model_dump(mode="json"), "date": record.logged_at.isoformat()}
 
 
@@ -455,7 +755,8 @@ async def add_expense(payload: ExpenseInput, user: CurrentUser, session: Session
 
 
 @app.get("/api/analytics")
-async def analytics(_: CurrentUser, session: Session) -> dict[str, Any]:
+async def analytics(user: CurrentUser, session: Session) -> dict[str, Any]:
+    require(user, "Fleet Manager", "Financial Analyst", "Administrator")
     fuel_logs = (await session.scalars(select(FuelLog))).all()
     maintenance = (await session.scalars(select(Maintenance))).all()
     trips = (await session.scalars(select(Trip))).all()
@@ -484,15 +785,15 @@ async def export_analytics(user: CurrentUser, session: Session) -> Response:
 async def get_settings(user: CurrentUser, session: Session) -> dict[str, Any]:
     require(user, "Fleet Manager", "Administrator")
     preferences = await require_record(session, Preference, 1)
-    return {"depot_name": preferences.depot_name, "currency": preferences.currency, "distance_unit": preferences.distance_unit}
+    return {field: getattr(preferences, field) for field in PreferencesInput.model_fields}
 
 
 @app.put("/api/settings")
 async def update_settings(payload: PreferencesInput, user: CurrentUser, session: Session) -> dict[str, Any]:
     require(user, "Fleet Manager", "Administrator")
     preferences = await require_record(session, Preference, 1)
-    before = {"depot_name": preferences.depot_name, "currency": preferences.currency, "distance_unit": preferences.distance_unit}
+    before = {field: getattr(preferences, field) for field in PreferencesInput.model_fields}
     for field, value in payload.model_dump().items(): setattr(preferences, field, value)
-    after = {"depot_name": preferences.depot_name, "currency": preferences.currency, "distance_unit": preferences.distance_unit}
+    after = {field: getattr(preferences, field) for field in PreferencesInput.model_fields}
     await audit(session, user, "preferences.updated", "preferences", "1", before, after)
     return after
