@@ -34,6 +34,7 @@ async def seed_demo_data(session: AsyncSession) -> None:
         await seed_core_data(session)
     await seed_tracking_data(session)
     await seed_fleet_enrichment(session)
+    await seed_driver_profiles(session)
 
 
 async def seed_core_data(session: AsyncSession) -> None:
@@ -185,6 +186,7 @@ async def seed_fleet_enrichment(session: AsyncSession) -> None:
     }
     document_types = ("Insurance", "PUC", "Fitness Certificate", "Permit", "Road Tax", "Lease")
     for vehicle in vehicles:
+        vehicle.photo_url = vehicle.photo_url or "/images/fleet/fleet-operations.jpg"
         if vehicle.id in profile:
             brand, model, vin, fuel_type, year, color = profile[vehicle.id]
             vehicle.brand = vehicle.brand or brand
@@ -212,3 +214,17 @@ async def seed_fleet_enrichment(session: AsyncSession) -> None:
         record.vendor = record.vendor or "TransitOps Workshop"
         record.invoice_reference = record.invoice_reference or f"INV-{record.id.upper()}"
         record.priority = record.priority or "Normal"
+
+
+async def seed_driver_profiles(session: AsyncSession) -> None:
+    """Attach locally served, privacy-safe profile portraits to the demo roster."""
+    photos = {
+        "d-alex": "/images/drivers/alex-thomas.png",
+        "d-rahul": "/images/drivers/rahul-patel.png",
+        "d-neha": "/images/drivers/neha-desai.png",
+        "d-samir": "/images/drivers/alex-thomas.png",
+        "d-meera": "/images/drivers/neha-desai.png",
+        "d-vikram": "/images/drivers/rahul-patel.png",
+    }
+    for driver in (await session.scalars(select(Driver))).all():
+        driver.photo_url = driver.photo_url or photos.get(driver.id, "")

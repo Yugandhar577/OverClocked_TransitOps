@@ -78,6 +78,7 @@ class Driver(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="Available", index=True)
     region: Mapped[str] = mapped_column(String(80), nullable=False, default="Ahmedabad")
     depot: Mapped[str] = mapped_column(String(100), nullable=False, default="Ahmedabad Depot")
+    photo_url: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
 
 class Trip(Base):

@@ -51,3 +51,18 @@ test('Driver lands on a useful assignment or empty live-trip state', async ({ pa
   await expect(page.getByText(/No active trip|Live trip|assignment/i).first()).toBeVisible()
   expect(forbidden).toEqual([])
 })
+
+test('Fleet manager can use the visual demo entry and open a driver profile', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: /Use Fleet Manager demo/i }).click()
+  await expect(page.getByLabel('Work email')).toHaveValue('fleet@transitops.demo')
+  await page.getByRole('button', { name: /sign in/i }).click()
+  await expect(page.getByText('Fleet Manager', { exact: true }).first()).toBeVisible()
+  const mobileMenu = page.getByRole('button', { name: 'Open navigation' })
+  if (await mobileMenu.isVisible()) await mobileMenu.click()
+  await page.getByRole('button', { name: 'Drivers' }).click()
+  await expect(page.getByRole('button', { name: /Alex Thomas/i })).toBeVisible()
+  await page.getByRole('button', { name: /Alex Thomas/i }).click()
+  await expect(page.getByRole('heading', { name: 'Driver profile' })).toBeVisible()
+  await expect(page.getByText('Safety rating')).toBeVisible()
+})

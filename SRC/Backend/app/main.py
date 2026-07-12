@@ -67,6 +67,7 @@ class DriverInput(BaseModel):
     safety_score: float = Field(ge=0, le=100)
     status: DriverStatus = "Available"
     region: str = "Ahmedabad"
+    photo_url: str = Field(default="", max_length=2_000_000)
 
 
 class TripInput(BaseModel):
@@ -197,7 +198,7 @@ def vehicle_value(vehicle: Vehicle) -> dict[str, Any]:
 
 
 def driver_value(driver: Driver) -> dict[str, Any]:
-    return {"id": driver.id, "name": driver.name, "license_number": driver.license_number, "license_category": driver.license_category, "license_expiry": driver.license_expiry.isoformat(), "contact": driver.contact, "safety_score": driver.safety_score, "status": driver.status, "region": driver.region, "depot": driver.depot}
+    return {"id": driver.id, "name": driver.name, "license_number": driver.license_number, "license_category": driver.license_category, "license_expiry": driver.license_expiry.isoformat(), "contact": driver.contact, "safety_score": driver.safety_score, "status": driver.status, "region": driver.region, "depot": driver.depot, "photo_url": driver.photo_url}
 
 
 def trip_value(trip: Trip) -> dict[str, Any]:
@@ -351,7 +352,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="TransitOps API", version="0.2.0", lifespan=lifespan)
-frontend_origins = [value.strip() for value in os.getenv("FRONTEND_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if value.strip()]
+frontend_origins = [value.strip() for value in os.getenv("FRONTEND_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174").split(",") if value.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=frontend_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.mount("/uploads", StaticFiles(directory="app/uploads", check_dir=False), name="uploads")
 app.include_router(tracking_router)
