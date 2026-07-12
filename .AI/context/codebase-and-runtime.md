@@ -13,15 +13,20 @@ Important paths:
 
 ## Runtime Assumptions
 
-No package manager files, app framework, database schema, or test runner are present yet. Future implementation work should first inspect the repository and then scaffold the selected stack.
+The application scaffold now lives under `SRC/`:
 
-If starting from scratch, prefer a TypeScript web stack:
+- `SRC/Backend` - FastAPI service and API workflow tests.
+- `SRC/Frontend` - Vite + React + TypeScript operations console.
+
+The initial hackathon slice has a seeded in-memory backend repository so the demo works without provisioning infrastructure. Its API services enforce the primary dispatch and maintenance rules. The planned production persistence target remains PostgreSQL through SQLAlchemy async.
+
+Use the selected Python + TypeScript web stack:
 
 - Frontend: Vite + React.
-- Backend: Express or NestJS.
-- Database: PostgreSQL for durable development; SQLite can be used for a demo if setup time is limited.
-- ORM: Prisma.
-- Tests: Vitest/Jest for domain rules, Playwright for browser flows.
+- Backend: FastAPI on Python 3.12 (the local environment currently has Python 3.13; use the pinned dependency set for the demo only).
+- Database: PostgreSQL 15 for durable development.
+- ORM: SQLAlchemy 2 async + Alembic.
+- Tests: Pytest + HTTPX for domain/API rules, Playwright for browser flows.
 
 ## Local Development Expectations
 
@@ -35,12 +40,13 @@ Once an app exists, add and maintain:
 Recommended script names:
 
 ```bash
+# Backend, from SRC/Backend
+uvicorn app.main:app --reload --port 8000
+pytest
+
+# Frontend, from SRC/Frontend
 npm run dev
 npm run build
-npm run test
-npm run lint
-npm run db:migrate
-npm run db:seed
 ```
 
 ## Verification Expectations

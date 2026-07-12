@@ -38,12 +38,14 @@ Key paths:
 
 ## Implementation Preferences
 
-If starting the app from scratch, prefer:
+The selected hackathon stack is:
 
 - Vite + React + TypeScript for the frontend.
-- Node.js with Express or NestJS for the backend.
-- Prisma with PostgreSQL for persistent data, or SQLite for a time-boxed local demo.
-- Vitest/Jest for business-rule tests and Playwright for critical browser flows.
+- FastAPI on Python 3.12 for the backend.
+- SQLAlchemy 2 async with PostgreSQL 15 for durable persistence; the first demo slice may use a clearly marked in-memory repository when database provisioning would block a demo.
+- Pytest + HTTPX for business-rule/API tests and Playwright for critical browser flows.
+
+Follow `.AI/context/Techstack.md` for pinned versions and dependencies. Do not switch to Express, NestJS, Prisma, or SQLite without an explicit product or delivery reason.
 
 Use the existing project conventions once code exists. Do not introduce a new framework or architecture without a clear reason.
 

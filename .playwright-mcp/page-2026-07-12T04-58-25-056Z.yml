@@ -1,0 +1,30 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e5]: TransitOps
+    - generic [ref=e11]:
+      - paragraph [ref=e12]: SMART TRANSPORT OPERATIONS
+      - heading "Run every trip with confidence." [level=1] [ref=e13]: Run every tripwith confidence.
+      - paragraph [ref=e14]: One calm command centre for fleet availability, driver compliance, dispatch decisions and operating costs.
+    - generic [ref=e15]: Server-enforced dispatch rules prevent invalid assignments before they happen.
+  - generic [ref=e21]:
+    - paragraph [ref=e22]: WELCOME BACK
+    - heading "Sign in to TransitOps" [level=2] [ref=e23]
+    - paragraph [ref=e24]: Use a seeded demo account to explore the operational workflow.
+    - generic [ref=e25]:
+      - text: Work email
+      - textbox "Work email" [ref=e26]: dispatcher@transitops.demo
+    - generic [ref=e27]:
+      - text: Password
+      - textbox "Password" [ref=e28]: demo
+    - button "Sign in" [ref=e29] [cursor=pointer]
+    - generic [ref=e32]:
+      - paragraph [ref=e33]: QUICK DEMO ROLES
+      - button "Dispatcher dispatcher@transitops.demo" [ref=e34] [cursor=pointer]:
+        - text: Dispatcher
+        - generic [ref=e35]: dispatcher@transitops.demo
+      - button "Fleet Manager fleet@transitops.demo" [ref=e36] [cursor=pointer]:
+        - text: Fleet Manager
+        - generic [ref=e37]: fleet@transitops.demo
+      - button "Financial Analyst finance@transitops.demo" [ref=e38] [cursor=pointer]:
+        - text: Financial Analyst
+        - generic [ref=e39]: finance@transitops.demo
