@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
+import os
 from typing import Annotated, Any, Literal, TypeVar
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Response, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
@@ -14,11 +15,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .database import SessionLocal, engine, get_session
 from .models import AuditEvent, Driver, Expense, FuelLog, Maintenance, Preference, Trip, User, Vehicle
 from .seed import password_context, seed_demo_data
+from .tracking import cleanup_expired_locations, end_tracking_for_driver, end_tracking_for_trip, router as tracking_router
 
 
 VehicleStatus = Literal["Available", "On Trip", "In Shop", "Retired"]
 DriverStatus = Literal["Available", "On Trip", "Off Duty", "Suspended"]
-RoleName = Literal["Fleet Manager", "Dispatcher", "Safety Officer", "Financial Analyst", "Administrator"]
+RoleName = Literal["Fleet Manager", "Dispatcher", "Safety Officer", "Financial Analyst", "Administrator", "Driver"]
 
 
 class LoginRequest(BaseModel):
@@ -51,6 +53,10 @@ class DriverInput(BaseModel):
 class TripInput(BaseModel):
     source: str = Field(min_length=2, max_length=80)
     destination: str = Field(min_length=2, max_length=80)
+    source_latitude: float | None = Field(default=None, ge=-90, le=90)
+    source_longitude: float | None = Field(default=None, ge=-180, le=180)
+    destination_latitude: float | None = Field(default=None, ge=-90, le=90)
+    destination_longitude: float | None = Field(default=None, ge=-180, le=180)
     vehicle_id: str
     driver_id: str
     cargo_kg: float = Field(gt=0)
@@ -87,6 +93,19 @@ class PreferencesInput(BaseModel):
     depot_name: str = Field(min_length=2, max_length=100)
     currency: str = Field(min_length=3, max_length=8)
     distance_unit: Literal["Kilometres", "Miles"]
+    live_tracking_enabled: bool = True
+    tracking_update_interval_seconds: int = Field(default=10, ge=5, le=120)
+    tracking_stationary_interval_seconds: int = Field(default=25, ge=10, le=300)
+    tracking_minimum_movement_meters: float = Field(default=20, ge=1, le=1000)
+    tracking_stale_seconds: int = Field(default=60, ge=15, le=3600)
+    tracking_offline_seconds: int = Field(default=180, ge=30, le=86400)
+    tracking_raw_retention_days: int = Field(default=60, ge=1, le=3650)
+    driver_fleet_visibility: Literal["OWN_VEHICLE_ONLY", "SAME_TRIP_GROUP", "SAME_DEPOT_ACTIVE_VEHICLES", "ALL_AUTHORIZED_ACTIVE_VEHICLES"] = "OWN_VEHICLE_ONLY"
+    allow_driver_pause: bool = True
+    allow_driver_nearby_vehicles: bool = False
+    map_provider: Literal["openstreetmap", "mapbox", "google"] = "openstreetmap"
+    directions_provider: Literal["straight_line", "openrouteservice", "mapbox", "google"] = "straight_line"
+    geofence_alerts_enabled: bool = True
 
 
 Session = Annotated[AsyncSession, Depends(get_session)]
@@ -97,19 +116,19 @@ def normalise(value: str) -> str:
 
 
 def user_value(user: User) -> dict[str, Any]:
-    return {"id": user.id, "name": user.name, "email": user.email, "role": user.role.name}
+    return {"id": user.id, "name": user.name, "email": user.email, "role": user.role.name, "driver_id": user.driver_id, "region": user.region}
 
 
 def vehicle_value(vehicle: Vehicle) -> dict[str, Any]:
-    return {"id": vehicle.id, "registration": vehicle.registration, "name": vehicle.name, "vehicle_type": vehicle.vehicle_type, "capacity_kg": vehicle.capacity_kg, "odometer_km": vehicle.odometer_km, "acquisition_cost": vehicle.acquisition_cost, "region": vehicle.region, "status": vehicle.status}
+    return {"id": vehicle.id, "registration": vehicle.registration, "name": vehicle.name, "vehicle_type": vehicle.vehicle_type, "capacity_kg": vehicle.capacity_kg, "odometer_km": vehicle.odometer_km, "acquisition_cost": vehicle.acquisition_cost, "region": vehicle.region, "depot": vehicle.depot, "status": vehicle.status}
 
 
 def driver_value(driver: Driver) -> dict[str, Any]:
-    return {"id": driver.id, "name": driver.name, "license_number": driver.license_number, "license_category": driver.license_category, "license_expiry": driver.license_expiry.isoformat(), "contact": driver.contact, "safety_score": driver.safety_score, "status": driver.status, "region": driver.region}
+    return {"id": driver.id, "name": driver.name, "license_number": driver.license_number, "license_category": driver.license_category, "license_expiry": driver.license_expiry.isoformat(), "contact": driver.contact, "safety_score": driver.safety_score, "status": driver.status, "region": driver.region, "depot": driver.depot}
 
 
 def trip_value(trip: Trip) -> dict[str, Any]:
-    return {"id": trip.id, "source": trip.source, "destination": trip.destination, "vehicle_id": trip.vehicle_id, "driver_id": trip.driver_id, "cargo_kg": trip.cargo_kg, "planned_distance_km": trip.planned_distance_km, "actual_distance_km": trip.actual_distance_km, "revenue": trip.revenue, "notes": trip.notes, "status": trip.status, "created_at": trip.created_at.isoformat(), "completed_at": trip.completed_at.isoformat() if trip.completed_at else None, "cancellation_reason": trip.cancellation_reason}
+    return {"id": trip.id, "source": trip.source, "destination": trip.destination, "source_latitude": trip.source_latitude, "source_longitude": trip.source_longitude, "destination_latitude": trip.destination_latitude, "destination_longitude": trip.destination_longitude, "vehicle_id": trip.vehicle_id, "driver_id": trip.driver_id, "cargo_kg": trip.cargo_kg, "planned_distance_km": trip.planned_distance_km, "actual_distance_km": trip.actual_distance_km, "revenue": trip.revenue, "notes": trip.notes, "status": trip.status, "created_at": trip.created_at.isoformat(), "completed_at": trip.completed_at.isoformat() if trip.completed_at else None, "cancellation_reason": trip.cancellation_reason}
 
 
 def maintenance_value(record: Maintenance) -> dict[str, Any]:
@@ -169,6 +188,7 @@ async def audit(session: AsyncSession, user: User, event_type: str, target_type:
 async def lifespan(_: FastAPI):
     async with SessionLocal.begin() as session:
         await seed_demo_data(session)
+        await cleanup_expired_locations(session)
     try:
         yield
     finally:
@@ -177,6 +197,18 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="TransitOps API", version="0.2.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.include_router(tracking_router)
+
+
+@app.middleware("http")
+async def tracking_request_guards(request: Request, call_next):
+    if request.url.path.startswith("/api/tracking"):
+        content_length = int(request.headers.get("content-length", "0") or 0)
+        if content_length > 262_144:
+            return Response(status_code=413, content="Tracking payload is too large.")
+        if os.getenv("ENVIRONMENT", "development") == "production" and request.headers.get("x-forwarded-proto", request.url.scheme) != "https":
+            return Response(status_code=400, content="HTTPS is required for live tracking.")
+    return await call_next(request)
 
 
 @app.get("/api/health")
@@ -192,6 +224,13 @@ async def login(payload: LoginRequest, session: Session) -> dict[str, Any]:
     return {"access_token": f"demo-{user.id}", "user": user_value(user)}
 
 
+@app.post("/api/auth/logout", status_code=204, response_class=Response)
+async def logout(user: CurrentUser, session: Session) -> Response:
+    if user.driver_id:
+        await end_tracking_for_driver(session, user.driver_id, "DRIVER_LOGOUT", user.id)
+    return Response(status_code=204)
+
+
 @app.get("/api/dashboard")
 async def dashboard(user: CurrentUser, session: Session) -> dict[str, Any]:
     vehicles = list((await session.scalars(select(Vehicle))).all())
@@ -200,7 +239,7 @@ async def dashboard(user: CurrentUser, session: Session) -> dict[str, Any]:
     active_vehicles = [vehicle for vehicle in vehicles if vehicle.status != "Retired"]
     status_counts = {key: sum(vehicle.status == key for vehicle in vehicles) for key in ["Available", "On Trip", "In Shop", "Retired"]}
     recent = sorted(trips, key=lambda trip: trip.created_at, reverse=True)[:5]
-    return {"kpis": {"activeVehicles": len(active_vehicles), "availableVehicles": status_counts["Available"], "inMaintenance": status_counts["In Shop"], "activeTrips": sum(trip.status == "Dispatched" for trip in trips), "pendingTrips": sum(trip.status == "Draft" for trip in trips), "driversOnDuty": sum(driver.status == "On Trip" for driver in drivers), "utilization": round(status_counts["On Trip"] / len(active_vehicles) * 100) if active_vehicles else 0}, "vehicleStatus": [{"name": key, "value": value} for key, value in status_counts.items()], "recentTrips": [await decorated_trip(session, trip) for trip in recent], "viewer": user_value(user)}
+    return {"kpis": {"activeVehicles": len(active_vehicles), "availableVehicles": status_counts["Available"], "inMaintenance": status_counts["In Shop"], "activeTrips": sum(trip.status in ("Dispatched", "In Progress") for trip in trips), "pendingTrips": sum(trip.status == "Draft" for trip in trips), "driversOnDuty": sum(driver.status == "On Trip" for driver in drivers), "utilization": round(status_counts["On Trip"] / len(active_vehicles) * 100) if active_vehicles else 0}, "vehicleStatus": [{"name": key, "value": value} for key, value in status_counts.items()], "recentTrips": [await decorated_trip(session, trip) for trip in recent], "viewer": user_value(user)}
 
 
 @app.get("/api/vehicles")
@@ -337,13 +376,18 @@ async def release_trip_resources(session: AsyncSession, trip: Trip) -> None:
 
 @app.post("/api/trips/{trip_id}/complete")
 async def complete(trip_id: str, user: CurrentUser, session: Session) -> dict[str, Any]:
-    require(user, "Dispatcher", "Fleet Manager", "Administrator")
     trip = await locked_record(session, Trip, trip_id)
-    if trip.status != "Dispatched":
-        raise HTTPException(status_code=409, detail="Only dispatched trips can be completed.")
+    if user.role.name == "Driver":
+        if not user.driver_id or user.driver_id != trip.driver_id:
+            raise HTTPException(status_code=403, detail="A driver can only complete their own assigned trip.")
+    else:
+        require(user, "Dispatcher", "Fleet Manager", "Administrator")
+    if trip.status not in ("Dispatched", "In Progress"):
+        raise HTTPException(status_code=409, detail="Only dispatched or in-progress trips can be completed.")
     before = trip_value(trip)
     trip.status, trip.completed_at = "Completed", datetime.now(UTC).replace(tzinfo=None)
     await release_trip_resources(session, trip)
+    await end_tracking_for_trip(session, trip.id, "TRIP_COMPLETED", user.id)
     await audit(session, user, "trip.completed", "trip", trip.id, before, trip_value(trip))
     return await decorated_trip(session, trip)
 
@@ -352,11 +396,12 @@ async def complete(trip_id: str, user: CurrentUser, session: Session) -> dict[st
 async def cancel(trip_id: str, user: CurrentUser, session: Session) -> dict[str, Any]:
     require(user, "Dispatcher", "Fleet Manager", "Administrator")
     trip = await locked_record(session, Trip, trip_id)
-    if trip.status not in ("Draft", "Dispatched"):
-        raise HTTPException(status_code=409, detail="Only draft or dispatched trips can be cancelled.")
+    if trip.status not in ("Draft", "Dispatched", "In Progress"):
+        raise HTTPException(status_code=409, detail="Only draft, dispatched, or in-progress trips can be cancelled.")
     before = trip_value(trip)
-    if trip.status == "Dispatched":
+    if trip.status in ("Dispatched", "In Progress"):
         await release_trip_resources(session, trip)
+        await end_tracking_for_trip(session, trip.id, "TRIP_CANCELLED", user.id)
     trip.status, trip.cancellation_reason = "Cancelled", "Cancelled by dispatcher"
     await audit(session, user, "trip.cancelled", "trip", trip.id, before, trip_value(trip))
     return await decorated_trip(session, trip)
@@ -458,15 +503,15 @@ async def export_analytics(user: CurrentUser, session: Session) -> Response:
 async def get_settings(user: CurrentUser, session: Session) -> dict[str, Any]:
     require(user, "Fleet Manager", "Administrator")
     preferences = await require_record(session, Preference, 1)
-    return {"depot_name": preferences.depot_name, "currency": preferences.currency, "distance_unit": preferences.distance_unit}
+    return {field: getattr(preferences, field) for field in PreferencesInput.model_fields}
 
 
 @app.put("/api/settings")
 async def update_settings(payload: PreferencesInput, user: CurrentUser, session: Session) -> dict[str, Any]:
     require(user, "Fleet Manager", "Administrator")
     preferences = await require_record(session, Preference, 1)
-    before = {"depot_name": preferences.depot_name, "currency": preferences.currency, "distance_unit": preferences.distance_unit}
+    before = {field: getattr(preferences, field) for field in PreferencesInput.model_fields}
     for field, value in payload.model_dump().items(): setattr(preferences, field, value)
-    after = {"depot_name": preferences.depot_name, "currency": preferences.currency, "distance_unit": preferences.distance_unit}
+    after = {field: getattr(preferences, field) for field in PreferencesInput.model_fields}
     await audit(session, user, "preferences.updated", "preferences", "1", before, after)
     return after
