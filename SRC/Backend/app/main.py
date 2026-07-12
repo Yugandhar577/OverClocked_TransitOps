@@ -18,7 +18,6 @@ from .database import SessionLocal, engine, get_session
 from .models import AuditEvent, Driver, Expense, FuelLog, Maintenance, OdometerLog, Preference, Trip, User, Vehicle, VehicleDocument
 from .seed import password_context, seed_demo_data
 from .tracking import cleanup_expired_locations, end_tracking_for_driver, end_tracking_for_trip, router as tracking_router
-from .routes.fuel_ocr_routes import router as fuel_ocr_router
 
 
 VehicleStatus = Literal["Available", "On Trip", "In Shop", "Retired"]
@@ -338,6 +337,7 @@ app = FastAPI(title="TransitOps API", version="0.2.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.mount("/uploads", StaticFiles(directory="app/uploads", check_dir=False), name="uploads")
 app.include_router(tracking_router)
+from .routes.fuel_ocr_routes import router as fuel_ocr_router
 app.include_router(fuel_ocr_router)
 
 
