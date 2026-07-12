@@ -1,0 +1,286 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e5]:
+      - generic [ref=e6]:
+        - img [ref=e8]
+        - generic [ref=e10]:
+          - paragraph [ref=e11]: MediFlow AI
+          - paragraph [ref=e12]: Patient
+      - navigation [ref=e13]:
+        - link "Dashboard" [ref=e14] [cursor=pointer]:
+          - /url: /patient/dashboard
+          - img [ref=e15]
+          - generic [ref=e20]: Dashboard
+        - link "Emergency" [ref=e21] [cursor=pointer]:
+          - /url: /patient/emergency
+          - img [ref=e22]
+          - generic [ref=e27]: Emergency
+        - link "Book Appointment" [ref=e28] [cursor=pointer]:
+          - /url: /patient/book
+          - img [ref=e29]
+          - generic [ref=e31]: Book Appointment
+        - link "Billing" [ref=e32] [cursor=pointer]:
+          - /url: /patient/billing
+          - img [ref=e33]
+          - generic [ref=e35]: Billing
+        - link "Prescriptions" [ref=e36] [cursor=pointer]:
+          - /url: /patient/prescriptions
+          - img [ref=e37]
+          - generic [ref=e40]: Prescriptions
+        - link "Medical History" [ref=e41] [cursor=pointer]:
+          - /url: /patient/history
+          - img [ref=e42]
+          - generic [ref=e46]: Medical History
+        - link "Medications" [ref=e47] [cursor=pointer]:
+          - /url: /patient/medications
+          - img [ref=e48]
+          - generic [ref=e51]: Medications
+        - link "Test Results" [ref=e52] [cursor=pointer]:
+          - /url: /patient/reports
+          - img [ref=e53]
+          - generic [ref=e56]: Test Results
+        - link "Family Access" [ref=e57] [cursor=pointer]:
+          - /url: /patient/family
+          - img [ref=e58]
+          - generic [ref=e63]: Family Access
+        - link "Insurance" [ref=e64] [cursor=pointer]:
+          - /url: /patient/insurance
+          - img [ref=e65]
+          - generic [ref=e68]: Insurance
+        - link "Rooms" [ref=e69] [cursor=pointer]:
+          - /url: /patient/rooms
+          - img [ref=e70]
+          - generic [ref=e72]: Rooms
+        - link "Hospital Map" [ref=e73] [cursor=pointer]:
+          - /url: /patient/navigation
+          - img [ref=e74]
+          - generic [ref=e76]: Hospital Map
+        - link "Care Journey" [ref=e77] [cursor=pointer]:
+          - /url: /patient/journey
+          - img [ref=e78]
+          - generic [ref=e81]: Care Journey
+        - link "Visual Triage" [ref=e82] [cursor=pointer]:
+          - /url: /patient/visual-triage
+          - img [ref=e83]
+          - generic [ref=e85]: Visual Triage
+        - link "AI Assistant" [ref=e86] [cursor=pointer]:
+          - /url: /patient/chat
+          - img [ref=e87]
+          - generic [ref=e89]: AI Assistant
+        - link "My Profile" [ref=e90] [cursor=pointer]:
+          - /url: /patient/profile
+          - img [ref=e91]
+          - generic [ref=e94]: My Profile
+      - generic [ref=e95]:
+        - generic [ref=e96]:
+          - img [ref=e98]
+          - generic [ref=e101]:
+            - paragraph [ref=e102]: Amit Desai
+            - paragraph [ref=e103]: MF-20260620-87DHOR
+        - button "Sign Out" [ref=e104]:
+          - img [ref=e105]
+          - generic [ref=e108]: Sign Out
+    - main [ref=e109]:
+      - generic [ref=e110]:
+        - generic [ref=e111]:
+          - generic [ref=e112]:
+            - paragraph [ref=e113]: Hospital Navigation
+            - heading "Floor Map & Shortest Route" [level=1] [ref=e114]
+            - paragraph [ref=e115]: Search a department, choose a floor, and route from reception.
+          - 'button "Current Appointment: 2:30 PM" [active] [ref=e116]':
+            - img [ref=e117]
+            - text: "Current Appointment: 2:30 PM"
+        - generic [ref=e120]:
+          - complementary [ref=e121]:
+            - generic [ref=e122]:
+              - generic [ref=e123]: Destination
+              - generic [ref=e124]:
+                - img
+                - textbox "Search room, lab, pharmacy..." [ref=e125]
+              - generic [ref=e126]:
+                - button "Billing Counter Floor 1" [ref=e127]:
+                  - generic [ref=e128]:
+                    - generic [ref=e129]: Billing Counter
+                    - generic [ref=e130]: Floor 1
+                  - img [ref=e131]
+                - button "Elevator A Floor 1" [ref=e133]:
+                  - generic [ref=e134]:
+                    - generic [ref=e135]: Elevator A
+                    - generic [ref=e136]: Floor 1
+                  - img [ref=e137]
+                - button "Emergency Department Floor 1" [ref=e139]:
+                  - generic [ref=e140]:
+                    - generic [ref=e141]: Emergency Department
+                    - generic [ref=e142]: Floor 1
+                  - img [ref=e143]
+                - button "Main Waiting Area Floor 1" [ref=e145]:
+                  - generic [ref=e146]:
+                    - generic [ref=e147]: Main Waiting Area
+                    - generic [ref=e148]: Floor 1
+                  - img [ref=e149]
+                - button "OPD Room 101 Floor 1 | Room 101" [ref=e151]:
+                  - generic [ref=e152]:
+                    - generic [ref=e153]: OPD Room 101
+                    - generic [ref=e154]: Floor 1 | Room 101
+                  - img [ref=e155]
+                - button "OPD Room 102 Floor 1 | Room 102" [ref=e157]:
+                  - generic [ref=e158]:
+                    - generic [ref=e159]: OPD Room 102
+                    - generic [ref=e160]: Floor 1 | Room 102
+                  - img [ref=e161]
+                - button "Pharmacy Floor 1" [ref=e163]:
+                  - generic [ref=e164]:
+                    - generic [ref=e165]: Pharmacy
+                    - generic [ref=e166]: Floor 1
+                  - img [ref=e167]
+                - button "Reception Floor 1" [ref=e169]:
+                  - generic [ref=e170]:
+                    - generic [ref=e171]: Reception
+                    - generic [ref=e172]: Floor 1
+                  - img [ref=e173]
+                - button "Restrooms Floor 1" [ref=e175]:
+                  - generic [ref=e176]:
+                    - generic [ref=e177]: Restrooms
+                    - generic [ref=e178]: Floor 1
+                  - img [ref=e179]
+                - button "Staircase A Floor 1" [ref=e181]:
+                  - generic [ref=e182]:
+                    - generic [ref=e183]: Staircase A
+                    - generic [ref=e184]: Floor 1
+                  - img [ref=e185]
+                - button "Diagnostics Lab Floor 2" [ref=e187]:
+                  - generic [ref=e188]:
+                    - generic [ref=e189]: Diagnostics Lab
+                    - generic [ref=e190]: Floor 2
+                  - img [ref=e191]
+                - button "Diagnostics Waiting Area Floor 2" [ref=e193]:
+                  - generic [ref=e194]:
+                    - generic [ref=e195]: Diagnostics Waiting Area
+                    - generic [ref=e196]: Floor 2
+                  - img [ref=e197]
+                - button "Elevator A Floor 2" [ref=e199]:
+                  - generic [ref=e200]:
+                    - generic [ref=e201]: Elevator A
+                    - generic [ref=e202]: Floor 2
+                  - img [ref=e203]
+                - button "MRI / CT Department Floor 2" [ref=e205]:
+                  - generic [ref=e206]:
+                    - generic [ref=e207]: MRI / CT Department
+                    - generic [ref=e208]: Floor 2
+                  - img [ref=e209]
+                - button "Radiology Floor 2" [ref=e211]:
+                  - generic [ref=e212]:
+                    - generic [ref=e213]: Radiology
+                    - generic [ref=e214]: Floor 2
+                  - img [ref=e215]
+                - button "Staircase A Floor 2" [ref=e217]:
+                  - generic [ref=e218]:
+                    - generic [ref=e219]: Staircase A
+                    - generic [ref=e220]: Floor 2
+                  - img [ref=e221]
+                - button "Elevator A Floor 3" [ref=e223]:
+                  - generic [ref=e224]:
+                    - generic [ref=e225]: Elevator A
+                    - generic [ref=e226]: Floor 3
+                  - img [ref=e227]
+                - button "ICU Floor 3" [ref=e229]:
+                  - generic [ref=e230]:
+                    - generic [ref=e231]: ICU
+                    - generic [ref=e232]: Floor 3
+                  - img [ref=e233]
+                - button "Restrooms Floor 3" [ref=e235]:
+                  - generic [ref=e236]:
+                    - generic [ref=e237]: Restrooms
+                    - generic [ref=e238]: Floor 3
+                  - img [ref=e239]
+                - button "Staircase A Floor 3" [ref=e241]:
+                  - generic [ref=e242]:
+                    - generic [ref=e243]: Staircase A
+                    - generic [ref=e244]: Floor 3
+                  - img [ref=e245]
+                - button "Ward A Floor 3" [ref=e247]:
+                  - generic [ref=e248]:
+                    - generic [ref=e249]: Ward A
+                    - generic [ref=e250]: Floor 3
+                  - img [ref=e251]
+                - button "Ward B Floor 3" [ref=e253]:
+                  - generic [ref=e254]:
+                    - generic [ref=e255]: Ward B
+                    - generic [ref=e256]: Floor 3
+                  - img [ref=e257]
+            - generic [ref=e259]:
+              - heading "Route" [level=2] [ref=e260]
+              - generic [ref=e338]:
+                - generic [ref=e339]:
+                  - generic [ref=e340]:
+                    - paragraph [ref=e341]: "4"
+                    - paragraph [ref=e342]: minutes
+                  - generic [ref=e343]:
+                    - paragraph [ref=e344]: "0"
+                    - paragraph [ref=e345]: floor changes
+                - list [ref=e346]:
+                  - listitem [ref=e347]:
+                    - generic [ref=e348]: "1"
+                    - button "Reception Floor 1" [ref=e349]:
+                      - generic [ref=e350]: Reception
+                      - generic [ref=e351]: Floor 1
+                  - listitem [ref=e352]:
+                    - generic [ref=e353]: "2"
+                    - button "Main Waiting Area Floor 1" [ref=e354]:
+                      - generic [ref=e355]: Main Waiting Area
+                      - generic [ref=e356]: Floor 1
+                  - listitem [ref=e357]:
+                    - generic [ref=e358]: "3"
+                    - button "OPD Room 101 Floor 1" [ref=e359]:
+                      - generic [ref=e360]: OPD Room 101
+                      - generic [ref=e361]: Floor 1
+          - generic [ref=e262]:
+            - generic [ref=e263]:
+              - generic [ref=e264]:
+                - button "Floor 1" [ref=e265]
+                - button "Floor 2" [ref=e266]
+                - button "Floor 3" [ref=e267]
+              - paragraph [ref=e268]: 10 mapped locations
+            - generic [ref=e269]:
+              - button "Billing Counter billing" [ref=e272]:
+                - img [ref=e273]
+                - generic [ref=e277]: Billing Counter
+                - generic [ref=e278]: billing
+              - button "Elevator A elevator" [ref=e279]:
+                - img [ref=e280]
+                - generic [ref=e284]: Elevator A
+                - generic [ref=e285]: elevator
+              - button "Emergency Department emergency" [ref=e286]:
+                - img [ref=e287]
+                - generic [ref=e289]: Emergency Department
+                - generic [ref=e290]: emergency
+              - button "Main Waiting Area waiting" [ref=e291]:
+                - img [ref=e292]
+                - generic [ref=e297]: Main Waiting Area
+                - generic [ref=e298]: waiting
+              - button "OPD Room 101 101" [ref=e299]:
+                - img [ref=e300]
+                - generic [ref=e303]: OPD Room 101
+                - generic [ref=e304]: "101"
+              - button "OPD Room 102 102" [ref=e305]:
+                - img [ref=e306]
+                - generic [ref=e309]: OPD Room 102
+                - generic [ref=e310]: "102"
+              - button "Pharmacy pharmacy" [ref=e311]:
+                - img [ref=e312]
+                - generic [ref=e314]: Pharmacy
+                - generic [ref=e315]: pharmacy
+              - button "Reception reception" [ref=e316]:
+                - img [ref=e317]
+                - generic [ref=e322]: Reception
+                - generic [ref=e323]: reception
+              - button "Restrooms restroom" [ref=e324]:
+                - img [ref=e325]
+                - generic [ref=e330]: Restrooms
+                - generic [ref=e331]: restroom
+              - button "Staircase A stairs" [ref=e332]:
+                - img [ref=e333]
+                - generic [ref=e336]: Staircase A
+                - generic [ref=e337]: stairs
+  - region "Notifications alt+T"
+  - alert [ref=e4]

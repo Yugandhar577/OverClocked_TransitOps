@@ -1,0 +1,110 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e69]:
+    - complementary [ref=e70]:
+      - generic [ref=e71]:
+        - img [ref=e73]
+        - generic [ref=e75]:
+          - paragraph [ref=e76]: MediFlow AI
+          - paragraph [ref=e77]: Doctor
+      - navigation [ref=e78]:
+        - link "My Queue" [ref=e79] [cursor=pointer]:
+          - /url: /doctor/dashboard
+          - img [ref=e80]
+          - generic [ref=e85]: My Queue
+        - link "Patient Search" [ref=e86] [cursor=pointer]:
+          - /url: /doctor/search
+          - img [ref=e87]
+          - generic [ref=e90]: Patient Search
+        - link "Prescriptions" [ref=e91] [cursor=pointer]:
+          - /url: /doctor/prescriptions
+          - img [ref=e92]
+          - generic [ref=e95]: Prescriptions
+        - link "Emergencies" [ref=e96] [cursor=pointer]:
+          - /url: /doctor/emergencies
+          - img [ref=e97]
+          - generic [ref=e99]: Emergencies
+        - link "Follow-Ups" [ref=e100] [cursor=pointer]:
+          - /url: /doctor/follow-ups
+          - img [ref=e101]
+          - generic [ref=e104]: Follow-Ups
+        - link "Care Teams" [ref=e105] [cursor=pointer]:
+          - /url: /doctor/care-teams
+          - img [ref=e106]
+          - generic [ref=e110]: Care Teams
+      - generic [ref=e111]:
+        - generic [ref=e112]:
+          - img [ref=e114]
+          - paragraph [ref=e118]: Dr. Priya Sharma
+        - button "Sign Out" [ref=e119]:
+          - img [ref=e120]
+          - generic [ref=e123]: Sign Out
+    - main [ref=e124]:
+      - generic [ref=e125]:
+        - generic [ref=e126]:
+          - generic [ref=e127]:
+            - paragraph [ref=e128]: Doctor Workspace
+            - heading "Clinical Command Center" [level=1] [ref=e129]
+            - paragraph [ref=e130]: Saturday, 20 June 2026 | Dr. Priya Sharma
+          - generic [ref=e131]:
+            - generic [ref=e132]:
+              - paragraph [ref=e133]: "0"
+              - paragraph [ref=e134]: Pending
+            - generic [ref=e135]:
+              - paragraph [ref=e136]: "1"
+              - paragraph [ref=e137]: In Queue
+            - generic [ref=e138]:
+              - paragraph [ref=e139]: "0"
+              - paragraph [ref=e140]: Completed
+        - generic [ref=e141]:
+          - link "Find Patient Open a patient record by PID, name, or phone." [ref=e142] [cursor=pointer]:
+            - /url: /doctor/search
+            - img [ref=e144]
+            - paragraph [ref=e147]: Find Patient
+            - paragraph [ref=e148]: Open a patient record by PID, name, or phone.
+          - link "Prescription Review Audit recent prescriptions sent to pharmacy." [ref=e149] [cursor=pointer]:
+            - /url: /doctor/prescriptions
+            - img [ref=e151]
+            - paragraph [ref=e154]: Prescription Review
+            - paragraph [ref=e155]: Audit recent prescriptions sent to pharmacy.
+          - link "Clinical Notes Use AI SOAP and Rx tools from an active consultation." [ref=e156] [cursor=pointer]:
+            - /url: /doctor/dashboard
+            - img [ref=e158]
+            - paragraph [ref=e161]: Clinical Notes
+            - paragraph [ref=e162]: Use AI SOAP and Rx tools from an active consultation.
+        - generic [ref=e163]:
+          - heading "Pending Appointments (0)" [level=2] [ref=e164]:
+            - img [ref=e165]
+            - text: Pending Appointments (0)
+          - paragraph [ref=e168]: No new bookings for today. Accepted patients appear in the active queue below.
+        - generic [ref=e169]:
+          - heading "Active Queue (1)" [level=2] [ref=e170]:
+            - img [ref=e171]
+            - text: Active Queue (1)
+          - generic [ref=e177]:
+            - generic [ref=e178]:
+              - generic [ref=e179]: "#1"
+              - generic [ref=e180]:
+                - generic [ref=e181]:
+                  - paragraph [ref=e182]: Amit Desai
+                  - generic [ref=e183]: MF-20260620-87DHOR
+                  - generic [ref=e184]: medium
+                - paragraph [ref=e185]: gbrebgtr
+                - generic [ref=e186]:
+                  - generic [ref=e187]:
+                    - img [ref=e188]
+                    - text: 2:30 PM
+                  - generic [ref=e191]:
+                    - img [ref=e192]
+                    - text: 20 Jun 2026
+                  - generic [ref=e195]: waiting
+            - generic [ref=e196]:
+              - link "History" [ref=e197] [cursor=pointer]:
+                - /url: /doctor/patient/MF-20260620-87DHOR?patientId=6ceb66a6-7300-4222-9efb-b4a6974380f8
+                - img [ref=e198]
+                - text: History
+              - button "Start Consultation" [ref=e202]
+              - link [ref=e203] [cursor=pointer]:
+                - /url: /doctor/consultation/949833a1-39ca-4efc-9501-996dd6b0dcfd?patientId=6ceb66a6-7300-4222-9efb-b4a6974380f8&pid=MF-20260620-87DHOR
+                - img [ref=e204]
+  - region "Notifications alt+T"
+  - alert [ref=e35]

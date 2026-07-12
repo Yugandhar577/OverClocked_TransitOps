@@ -1,0 +1,158 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e36]:
+    - complementary [ref=e37]:
+      - generic [ref=e38]:
+        - img [ref=e40]
+        - generic [ref=e42]:
+          - paragraph [ref=e43]: MediFlow AI
+          - paragraph [ref=e44]: Patient
+      - navigation [ref=e45]:
+        - link "Dashboard" [ref=e46] [cursor=pointer]:
+          - /url: /patient/dashboard
+          - img [ref=e47]
+          - generic [ref=e52]: Dashboard
+        - link "Emergency" [ref=e53] [cursor=pointer]:
+          - /url: /patient/emergency
+          - img [ref=e54]
+          - generic [ref=e59]: Emergency
+        - link "Book Appointment" [ref=e60] [cursor=pointer]:
+          - /url: /patient/book
+          - img [ref=e61]
+          - generic [ref=e63]: Book Appointment
+        - link "Billing" [ref=e64] [cursor=pointer]:
+          - /url: /patient/billing
+          - img [ref=e65]
+          - generic [ref=e67]: Billing
+        - link "Prescriptions" [ref=e68] [cursor=pointer]:
+          - /url: /patient/prescriptions
+          - img [ref=e69]
+          - generic [ref=e72]: Prescriptions
+        - link "Medical History" [ref=e73] [cursor=pointer]:
+          - /url: /patient/history
+          - img [ref=e74]
+          - generic [ref=e78]: Medical History
+        - link "Medications" [ref=e79] [cursor=pointer]:
+          - /url: /patient/medications
+          - img [ref=e80]
+          - generic [ref=e83]: Medications
+        - link "Test Results" [ref=e84] [cursor=pointer]:
+          - /url: /patient/reports
+          - img [ref=e85]
+          - generic [ref=e88]: Test Results
+        - link "Family Access" [ref=e89] [cursor=pointer]:
+          - /url: /patient/family
+          - img [ref=e90]
+          - generic [ref=e95]: Family Access
+        - link "Insurance" [ref=e96] [cursor=pointer]:
+          - /url: /patient/insurance
+          - img [ref=e97]
+          - generic [ref=e100]: Insurance
+        - link "Rooms" [ref=e101] [cursor=pointer]:
+          - /url: /patient/rooms
+          - img [ref=e102]
+          - generic [ref=e104]: Rooms
+        - link "Hospital Map" [ref=e105] [cursor=pointer]:
+          - /url: /patient/navigation
+          - img [ref=e106]
+          - generic [ref=e108]: Hospital Map
+        - link "Care Journey" [ref=e109] [cursor=pointer]:
+          - /url: /patient/journey
+          - img [ref=e110]
+          - generic [ref=e113]: Care Journey
+        - link "Visual Triage" [ref=e114] [cursor=pointer]:
+          - /url: /patient/visual-triage
+          - img [ref=e115]
+          - generic [ref=e117]: Visual Triage
+        - link "AI Assistant" [ref=e118] [cursor=pointer]:
+          - /url: /patient/chat
+          - img [ref=e119]
+          - generic [ref=e121]: AI Assistant
+        - link "My Profile" [ref=e122] [cursor=pointer]:
+          - /url: /patient/profile
+          - img [ref=e123]
+          - generic [ref=e126]: My Profile
+      - generic [ref=e127]:
+        - generic [ref=e128]:
+          - img [ref=e130]
+          - generic [ref=e133]:
+            - paragraph [ref=e134]: Amit Desai
+            - paragraph [ref=e135]: MF-20260620-87DHOR
+        - button "Sign Out" [ref=e136]:
+          - img [ref=e137]
+          - generic [ref=e140]: Sign Out
+    - main [ref=e141]:
+      - generic [ref=e142]:
+        - generic [ref=e143]:
+          - heading "Good afternoon, Amit 👋" [level=1] [ref=e144]
+          - paragraph [ref=e145]: Here's your health overview for today
+        - generic [ref=e146]:
+          - generic [ref=e148]:
+            - generic [ref=e149]:
+              - img [ref=e150]
+              - generic [ref=e152]: Patient ID Card
+            - img [ref=e154]
+            - generic [ref=e157]:
+              - paragraph [ref=e158]: MF-20260620-87DHOR
+              - paragraph [ref=e159]: Amit Desai
+              - generic [ref=e160]:
+                - generic [ref=e161]: Male
+                - generic [ref=e162]: •
+                - generic [ref=e163]: O+
+            - paragraph [ref=e165]: Scan QR for quick hospital check-in
+          - generic [ref=e166]:
+            - generic [ref=e167]:
+              - generic [ref=e168]:
+                - paragraph [ref=e169]: "1"
+                - paragraph [ref=e170]: Total Visits
+              - generic [ref=e171]:
+                - paragraph [ref=e172]: "1"
+                - paragraph [ref=e173]: Upcoming
+              - generic [ref=e174]:
+                - paragraph [ref=e175]: —
+                - paragraph [ref=e176]: Prescriptions
+            - generic [ref=e177]:
+              - generic [ref=e178]:
+                - heading "Upcoming Appointments" [level=2] [ref=e179]
+                - link "Book New" [ref=e180] [cursor=pointer]:
+                  - /url: /patient/book
+                  - text: Book New
+                  - img [ref=e181]
+              - generic [ref=e184]:
+                - img [ref=e186]
+                - generic [ref=e188]:
+                  - paragraph [ref=e189]: Dr. Priya Sharma
+                  - paragraph [ref=e190]: General Medicine
+                  - generic [ref=e191]:
+                    - img [ref=e192]
+                    - generic [ref=e195]: 20 Jun 2026, 2:30 PM
+                - generic [ref=e197]: booked
+            - generic [ref=e198]:
+              - img [ref=e199]
+              - generic [ref=e201]:
+                - paragraph [ref=e202]: Known Allergies
+                - paragraph [ref=e203]: Penicillin
+        - generic [ref=e204]:
+          - heading "Quick Actions" [level=2] [ref=e205]
+          - generic [ref=e206]:
+            - link "Book Appointment" [ref=e207] [cursor=pointer]:
+              - /url: /patient/book
+              - img [ref=e209]
+              - generic [ref=e211]: Book Appointment
+            - link "Pay Bill" [ref=e212] [cursor=pointer]:
+              - /url: /patient/billing
+              - img [ref=e214]
+              - generic [ref=e216]: Pay Bill
+            - link "Medical History" [ref=e217] [cursor=pointer]:
+              - /url: /patient/history
+              - img [ref=e219]
+              - generic [ref=e221]: Medical History
+            - link "AI Assistant" [ref=e222] [cursor=pointer]:
+              - /url: /patient/chat
+              - img [ref=e224]
+              - generic [ref=e227]: AI Assistant
+            - link "My Profile" [ref=e228] [cursor=pointer]:
+              - /url: /patient/profile
+              - img [ref=e230]
+              - generic [ref=e232]: My Profile
+  - region "Notifications alt+T"
+  - alert [ref=e35]

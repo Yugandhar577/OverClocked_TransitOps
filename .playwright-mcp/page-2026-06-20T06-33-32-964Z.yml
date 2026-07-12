@@ -1,0 +1,32 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - img [ref=e6]
+      - generic [ref=e8]: MediFlow AI
+    - generic [ref=e9]:
+      - heading "Welcome back" [level=1] [ref=e10]
+      - paragraph [ref=e11]: Sign in to your account
+      - generic [ref=e12]:
+        - generic [ref=e13]:
+          - generic [ref=e14]: Email or Phone
+          - textbox "email@example.com or 9876543210" [ref=e15]
+        - generic [ref=e16]:
+          - generic [ref=e17]: Password
+          - generic [ref=e18]:
+            - textbox "Enter your password" [ref=e19]
+            - button [ref=e20]:
+              - img [ref=e21]
+        - button "Sign In" [ref=e24]
+      - generic [ref=e25]:
+        - paragraph [ref=e26]: Quick Demo Login
+        - generic [ref=e27]:
+          - button "Patient" [ref=e28]
+          - button "Doctor" [ref=e29]
+          - button "Reception" [ref=e30]
+          - button "Pharmacy" [ref=e31]
+      - paragraph [ref=e32]:
+        - text: New patient?
+        - link "Register here" [ref=e33] [cursor=pointer]:
+          - /url: /register
+  - region "Notifications alt+T"
+  - alert [ref=e34]

@@ -1,0 +1,83 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e5]:
+      - generic [ref=e6]:
+        - img [ref=e8]
+        - generic [ref=e10]:
+          - paragraph [ref=e11]: MediFlow AI
+          - paragraph [ref=e12]: Doctor
+      - navigation [ref=e13]:
+        - link "My Queue" [ref=e14] [cursor=pointer]:
+          - /url: /doctor/dashboard
+          - img [ref=e15]
+          - generic [ref=e20]: My Queue
+        - link "Patient Search" [ref=e21] [cursor=pointer]:
+          - /url: /doctor/search
+          - img [ref=e22]
+          - generic [ref=e25]: Patient Search
+        - link "Prescriptions" [ref=e26] [cursor=pointer]:
+          - /url: /doctor/prescriptions
+          - img [ref=e27]
+          - generic [ref=e30]: Prescriptions
+        - link "Emergencies" [ref=e31] [cursor=pointer]:
+          - /url: /doctor/emergencies
+          - img [ref=e32]
+          - generic [ref=e34]: Emergencies
+        - link "Follow-Ups" [ref=e35] [cursor=pointer]:
+          - /url: /doctor/follow-ups
+          - img [ref=e36]
+          - generic [ref=e39]: Follow-Ups
+        - link "Care Teams" [ref=e40] [cursor=pointer]:
+          - /url: /doctor/care-teams
+          - img [ref=e41]
+          - generic [ref=e45]: Care Teams
+      - generic [ref=e46]:
+        - generic [ref=e47]:
+          - img [ref=e49]
+          - paragraph [ref=e53]: Dr. Priya Sharma
+        - button "Sign Out" [ref=e54]:
+          - img [ref=e55]
+          - generic [ref=e58]: Sign Out
+    - main [ref=e59]:
+      - generic [ref=e148]:
+        - generic [ref=e149]:
+          - generic [ref=e150]:
+            - heading "Consultation" [level=1] [ref=e151]
+            - paragraph [ref=e152]: "Patient: MF-20260620-87DHOR"
+          - button "← Back to queue" [ref=e153]
+        - generic [ref=e154]:
+          - button "Patient Summary" [ref=e155]
+          - button "SOAP Notes" [ref=e156]
+          - button "Prescription" [ref=e157]
+        - generic [ref=e158]:
+          - generic [ref=e159]:
+            - generic [ref=e160]:
+              - generic [ref=e161]:
+                - img [ref=e162]
+                - heading "AI Clinical Summary" [level=2] [ref=e170]
+              - generic [ref=e171]: UNKNOWN RISK
+            - paragraph [ref=e172]: Patient summary generation failed. Please review records manually.
+            - generic [ref=e174]:
+              - paragraph [ref=e175]: ⚠ Key Alerts
+              - generic [ref=e177]:
+                - img [ref=e178]
+                - generic [ref=e180]: AI summary unavailable — review patient history manually
+          - generic [ref=e181]:
+            - generic [ref=e182]:
+              - paragraph [ref=e183]: Age
+              - paragraph [ref=e184]: "44"
+            - generic [ref=e185]:
+              - paragraph [ref=e186]: Gender
+              - paragraph [ref=e187]: Male
+            - generic [ref=e188]:
+              - paragraph [ref=e189]: Blood Group
+              - paragraph [ref=e190]: O+
+            - generic [ref=e191]:
+              - paragraph [ref=e192]: Allergies
+              - paragraph [ref=e193]: Penicillin
+          - generic [ref=e194]:
+            - paragraph [ref=e195]: 20 Jun 2026 — Dr. Priya Sharma
+            - paragraph [ref=e196]: Type 2 Diabetes Mellitus — controlled
+            - paragraph [ref=e197]: 2 medicines prescribed
+  - region "Notifications alt+T"
+  - alert [ref=e4]

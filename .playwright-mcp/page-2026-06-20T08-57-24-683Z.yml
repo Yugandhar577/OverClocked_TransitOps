@@ -1,0 +1,177 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e69]:
+    - complementary [ref=e70]:
+      - generic [ref=e71]:
+        - img [ref=e73]
+        - generic [ref=e75]:
+          - paragraph [ref=e76]: MediFlow AI
+          - paragraph [ref=e77]: Nurse
+      - navigation [ref=e78]:
+        - link "Dashboard" [ref=e79] [cursor=pointer]:
+          - /url: /nurse/dashboard
+          - img [ref=e80]
+          - generic [ref=e82]: Dashboard
+        - link "Vitals" [ref=e83] [cursor=pointer]:
+          - /url: /nurse/dashboard#vitals
+          - img [ref=e84]
+          - generic [ref=e87]: Vitals
+        - link "Medications" [ref=e88] [cursor=pointer]:
+          - /url: /nurse/dashboard#medications
+          - img [ref=e89]
+          - generic [ref=e92]: Medications
+        - link "Beds" [ref=e93] [cursor=pointer]:
+          - /url: /nurse/dashboard#beds
+          - img [ref=e94]
+          - generic [ref=e96]: Beds
+        - link "Notes" [ref=e97] [cursor=pointer]:
+          - /url: /nurse/dashboard#notes
+          - img [ref=e98]
+          - generic [ref=e101]: Notes
+        - link "Emergencies" [ref=e102] [cursor=pointer]:
+          - /url: /nurse/dashboard#emergencies
+          - img [ref=e103]
+          - generic [ref=e105]: Emergencies
+      - generic [ref=e106]:
+        - generic [ref=e107]:
+          - img [ref=e109]
+          - paragraph [ref=e113]: nurse@mediflow.ai
+        - button "Sign Out" [ref=e114]:
+          - img [ref=e115]
+          - generic [ref=e118]: Sign Out
+    - main [ref=e119]:
+      - generic [ref=e120]:
+        - generic [ref=e121]:
+          - generic [ref=e122]:
+            - paragraph [ref=e123]: Nurse Workspace
+            - heading "Patient Monitoring Center" [level=1] [ref=e124]
+            - paragraph [ref=e125]: Saturday, 20 June 2026
+          - generic [ref=e126]:
+            - generic [ref=e127]:
+              - paragraph [ref=e128]: "1"
+              - paragraph [ref=e129]: Assigned
+            - generic [ref=e130]:
+              - paragraph [ref=e131]: "1"
+              - paragraph [ref=e132]: Tasks
+            - generic [ref=e133]:
+              - paragraph [ref=e134]: "0"
+              - paragraph [ref=e135]: Alerts
+        - generic [ref=e136]:
+          - button "Amit Desai MF-20260620-87DHOR medium monitoring" [ref=e138]:
+            - generic [ref=e139]:
+              - generic [ref=e140]:
+                - paragraph [ref=e141]: Amit Desai
+                - paragraph [ref=e142]: MF-20260620-87DHOR
+              - generic [ref=e143]: medium
+            - generic [ref=e145]: monitoring
+          - generic [ref=e146]:
+            - generic [ref=e148]:
+              - generic [ref=e149]:
+                - heading "Amit Desai" [level=2] [ref=e150]
+                - paragraph [ref=e151]: MF-20260620-87DHOR
+                - paragraph [ref=e152]: "Blood group: O+ | Allergies: Penicillin"
+                - paragraph [ref=e153]: Monitor vitals and medication adherence.
+              - generic [ref=e154]:
+                - button "monitoring" [ref=e155]
+                - button "pending review" [ref=e156]
+                - button "ready for discharge" [ref=e157]
+            - generic [ref=e158]:
+              - generic [ref=e159]:
+                - heading "Record Vitals" [level=3] [ref=e160]:
+                  - img [ref=e161]
+                  - text: Record Vitals
+                - generic [ref=e164]:
+                  - textbox "blood pressure" [ref=e165]
+                  - textbox "heart rate" [ref=e166]
+                  - textbox "temperature" [ref=e167]
+                  - textbox "oxygen saturation" [ref=e168]
+                  - textbox "weight" [ref=e169]
+                  - textbox "height" [ref=e170]
+                - button "Save Vitals" [ref=e171]:
+                  - img [ref=e245]
+                  - text: Save Vitals
+              - generic [ref=e175]:
+                - heading "Latest Vitals" [level=3] [ref=e176]:
+                  - img [ref=e177]
+                  - text: Latest Vitals
+                - generic [ref=e179]:
+                  - generic [ref=e248]:
+                    - paragraph [ref=e249]: height
+                    - paragraph [ref=e250]: 172 cm
+                  - generic [ref=e251]:
+                    - paragraph [ref=e252]: weight
+                    - paragraph [ref=e253]: 74 kg
+                  - generic [ref=e254]:
+                    - paragraph [ref=e255]: oxygen saturation
+                    - paragraph [ref=e256]: 98 %
+                  - generic [ref=e257]:
+                    - paragraph [ref=e258]: temperature
+                    - paragraph [ref=e259]: 98.4 F
+                  - generic [ref=e260]:
+                    - paragraph [ref=e261]: heart rate
+                    - paragraph [ref=e262]: 82 bpm
+                  - generic [ref=e263]:
+                    - paragraph [ref=e264]: blood pressure
+                    - paragraph [ref=e265]: 118/76 mmHg
+            - generic [ref=e181]:
+              - heading "Medication Schedule" [level=3] [ref=e182]:
+                - img [ref=e183]
+                - text: Medication Schedule
+              - generic [ref=e186]:
+                - generic [ref=e187]:
+                  - generic [ref=e188]:
+                    - paragraph [ref=e189]: Metformin
+                    - paragraph [ref=e190]: 500mg | twice daily
+                  - button "Mark Administered" [ref=e191]
+                - generic [ref=e192]:
+                  - generic [ref=e193]:
+                    - paragraph [ref=e194]: Vitamin D3
+                    - paragraph [ref=e195]: 60000 IU | weekly
+                  - button "Mark Administered" [ref=e196]
+            - generic [ref=e197]:
+              - generic [ref=e198]:
+                - heading "Nursing Notes" [level=3] [ref=e199]:
+                  - img [ref=e200]
+                  - text: Nursing Notes
+                - textbox "Add observation or care note" [ref=e203]
+                - button "Add Note" [disabled] [ref=e204]:
+                  - img [ref=e205]
+                  - text: Add Note
+              - generic [ref=e208]:
+                - heading "Doctor Review" [level=3] [ref=e209]:
+                  - img [ref=e210]
+                  - text: Doctor Review
+                - textbox "Reason for doctor review" [ref=e214]
+                - button "Request Review" [disabled] [ref=e215]:
+                  - img [ref=e216]
+                  - text: Request Review
+            - generic [ref=e220]:
+              - generic [ref=e221]:
+                - img [ref=e222]
+                - paragraph [ref=e224]: "1"
+                - paragraph [ref=e225]: Total Beds
+              - generic [ref=e226]:
+                - img [ref=e227]
+                - paragraph [ref=e229]: "0"
+                - paragraph [ref=e230]: Occupied
+              - generic [ref=e231]:
+                - img [ref=e232]
+                - paragraph [ref=e234]: "0"
+                - paragraph [ref=e235]: Ready Discharge
+            - generic [ref=e236]:
+              - heading "Emergency Escalation" [level=3] [ref=e237]:
+                - img [ref=e238]
+                - text: Emergency Escalation
+              - generic [ref=e240]:
+                - combobox [ref=e241]:
+                  - option "Urgent"
+                  - option "Critical" [selected]
+                  - option "Life Threatening"
+                - button "Escalate Emergency" [ref=e242]:
+                  - img [ref=e243]
+                  - text: Escalate Emergency
+  - region "Notifications alt+T":
+    - list:
+      - listitem [ref=e266]:
+        - img [ref=e268]
+        - generic [ref=e272]: Vitals recorded
+  - alert [ref=e35]

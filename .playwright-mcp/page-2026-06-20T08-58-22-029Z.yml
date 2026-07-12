@@ -1,0 +1,114 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e69]:
+    - complementary [ref=e70]:
+      - generic [ref=e71]:
+        - img [ref=e73]
+        - generic [ref=e75]:
+          - paragraph [ref=e76]: MediFlow AI
+          - paragraph [ref=e77]: Reception
+      - navigation [ref=e78]:
+        - link "Queue Board" [ref=e79] [cursor=pointer]:
+          - /url: /reception/dashboard
+          - img [ref=e80]
+          - generic [ref=e85]: Queue Board
+        - link "Check-In" [ref=e86] [cursor=pointer]:
+          - /url: /reception/check-in
+          - img [ref=e87]
+          - generic [ref=e92]: Check-In
+        - link "Appointments" [ref=e93] [cursor=pointer]:
+          - /url: /reception/appointments
+          - img [ref=e94]
+          - generic [ref=e97]: Appointments
+        - link "Emergencies" [ref=e98] [cursor=pointer]:
+          - /url: /reception/emergencies
+          - img [ref=e99]
+          - generic [ref=e101]: Emergencies
+        - link "Rooms & Beds" [ref=e102] [cursor=pointer]:
+          - /url: /reception/rooms
+          - img [ref=e103]
+          - generic [ref=e105]: Rooms & Beds
+        - link "Navigation" [ref=e106] [cursor=pointer]:
+          - /url: /reception/navigation
+          - img [ref=e107]
+          - generic [ref=e109]: Navigation
+        - link "Patient Journey" [ref=e110] [cursor=pointer]:
+          - /url: /reception/journeys
+          - img [ref=e111]
+          - generic [ref=e114]: Patient Journey
+        - link "Earlier Slots" [ref=e115] [cursor=pointer]:
+          - /url: /reception/waitlist
+          - img [ref=e116]
+          - generic [ref=e119]: Earlier Slots
+      - generic [ref=e120]:
+        - generic [ref=e121]:
+          - img [ref=e123]
+          - paragraph [ref=e127]: reception@mediflow.ai
+        - button "Sign Out" [ref=e128]:
+          - img [ref=e129]
+          - generic [ref=e132]: Sign Out
+    - main [ref=e133]:
+      - generic [ref=e134]:
+        - generic [ref=e135]:
+          - generic [ref=e136]:
+            - heading "Reception Dashboard" [level=1] [ref=e137]
+            - paragraph [ref=e138]: Saturday, 20 June 2026
+          - generic [ref=e139]:
+            - generic [ref=e140]:
+              - paragraph [ref=e141]: "1"
+              - paragraph [ref=e142]: In Queue
+            - generic [ref=e143]:
+              - paragraph [ref=e144]: "1"
+              - paragraph [ref=e145]: Waiting
+            - generic [ref=e146]:
+              - paragraph [ref=e147]: "1"
+              - paragraph [ref=e148]: Total Today
+        - generic [ref=e149]:
+          - generic [ref=e150]:
+            - generic [ref=e151]:
+              - img [ref=e152]
+              - heading "Check-In Patient" [level=2] [ref=e158]
+            - generic [ref=e159]:
+              - textbox "Search by PID, name, or phone..." [ref=e160]
+              - button [ref=e161]:
+                - img [ref=e162]
+          - generic [ref=e165]:
+            - generic [ref=e166]:
+              - img [ref=e167]
+              - heading "Live Queue Board" [level=2] [ref=e172]
+            - generic [ref=e210]:
+              - generic [ref=e211]: "#1"
+              - generic [ref=e213]:
+                - paragraph [ref=e214]: Amit Desai
+                - paragraph [ref=e215]: Dr. Priya Sharma • 2:30 PM
+              - generic [ref=e216]: waiting
+        - generic [ref=e180]:
+          - heading "All Today's Appointments" [level=2] [ref=e181]:
+            - img [ref=e182]
+            - text: All Today's Appointments
+          - table [ref=e186]:
+            - rowgroup [ref=e187]:
+              - row "Time Patient PID Doctor Priority Status Action" [ref=e188]:
+                - columnheader "Time" [ref=e189]
+                - columnheader "Patient" [ref=e190]
+                - columnheader "PID" [ref=e191]
+                - columnheader "Doctor" [ref=e192]
+                - columnheader "Priority" [ref=e193]
+                - columnheader "Status" [ref=e194]
+                - columnheader "Action" [ref=e195]
+            - rowgroup [ref=e196]:
+              - row "2:30 PM Amit Desai MF-20260620-87DHOR Dr. Priya Sharma medium waiting" [ref=e217]:
+                - cell "2:30 PM" [ref=e198]
+                - cell "Amit Desai" [ref=e199]
+                - cell "MF-20260620-87DHOR" [ref=e200]
+                - cell "Dr. Priya Sharma" [ref=e201]
+                - cell "medium" [ref=e202]:
+                  - generic [ref=e203]: medium
+                - cell "waiting" [ref=e218]:
+                  - generic [ref=e205]: waiting
+                - cell [ref=e219]
+  - region "Notifications alt+T":
+    - list:
+      - listitem [ref=e220]:
+        - img [ref=e222]
+        - generic [ref=e226]: "Checked in! Queue position: #1"
+  - alert [ref=e35]
