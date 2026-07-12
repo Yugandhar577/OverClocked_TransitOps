@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Response, status
 from fastapi.responses import StreamingResponse
+from jose import JWTError, jwt
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -143,9 +144,20 @@ route_cache: dict[str, RouteResult] = {}
 
 
 async def current_tracking_user(session: Session, authorization: str | None = Header(default=None)) -> User:
-    if not authorization or not authorization.startswith("Bearer demo-"):
+    if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Please sign in to continue.")
-    user = await session.get(User, authorization.removeprefix("Bearer demo-"))
+    try:
+        payload = jwt.decode(
+            authorization.removeprefix("Bearer "),
+            os.getenv("TRANSITOPS_JWT_SECRET", "transitops-local-demo-secret-change-in-production"),
+            algorithms=["HS256"],
+        )
+        user_id = payload.get("sub")
+        if not user_id:
+            raise JWTError("Missing token subject")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Your session is invalid or expired. Please sign in again.")
+    user = await session.get(User, user_id)
     if not user or not user.active:
         raise HTTPException(status_code=401, detail="Please sign in to continue.")
     return user

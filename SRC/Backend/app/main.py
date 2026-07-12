@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from jose import JWTError, jwt
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +22,11 @@ from .tracking import cleanup_expired_locations, end_tracking_for_driver, end_tr
 VehicleStatus = Literal["Available", "On Trip", "In Shop", "Retired"]
 DriverStatus = Literal["Available", "On Trip", "Off Duty", "Suspended"]
 RoleName = Literal["Fleet Manager", "Dispatcher", "Safety Officer", "Financial Analyst", "Administrator", "Driver"]
+JWT_SECRET = os.getenv("TRANSITOPS_JWT_SECRET", "transitops-local-demo-secret-change-in-production")
+JWT_ALGORITHM = "HS256"
+TOKEN_TTL_HOURS = 8
+failed_logins: dict[str, list[datetime]] = {}
+revoked_tokens: dict[str, datetime] = {}
 MaintenanceStatus = Literal["Scheduled", "In Progress", "Completed", "Cancelled"]
 MaintenancePriority = Literal["Low", "Normal", "Urgent"]
 FuelType = Literal["Diesel", "Petrol", "CNG", "Electric", "Hybrid"]
@@ -277,9 +283,18 @@ async def locked_record(session: AsyncSession, model: type[ModelType], record_id
 
 
 async def current_user(session: Session, authorization: str | None = Header(default=None)) -> User:
-    if not authorization or not authorization.startswith("Bearer demo-"):
+    if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Please sign in to continue.")
-    user = await require_record(session, User, authorization.removeprefix("Bearer demo-"))
+    token = authorization.removeprefix("Bearer ")
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        token_id = payload.get("jti")
+        user_id = payload.get("sub")
+        if not token_id or not user_id or token_id in revoked_tokens:
+            raise JWTError("Invalid session")
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Your session is invalid or expired. Please sign in again.")
+    user = await require_record(session, User, user_id)
     if not user.active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Please sign in to continue.")
     return user
@@ -331,14 +346,32 @@ async def health() -> dict[str, str]:
 
 @app.post("/api/auth/login")
 async def login(payload: LoginRequest, session: Session) -> dict[str, Any]:
-    user = await session.scalar(select(User).where(User.email == str(payload.email).lower()))
+    now = datetime.now(UTC)
+    email = str(payload.email).lower()
+    attempts = [item for item in failed_logins.get(email, []) if now - item < timedelta(minutes=15)]
+    if len(attempts) >= 5:
+        raise HTTPException(status_code=429, detail="Too many failed sign-in attempts. Try again in 15 minutes.")
+    user = await session.scalar(select(User).where(User.email == email))
     if not user or not user.active or not password_context.verify(payload.password, user.password_hash):
+        failed_logins[email] = [*attempts, now]
         raise HTTPException(status_code=401, detail="Invalid email or password.")
-    return {"access_token": f"demo-{user.id}", "user": user_value(user)}
+    failed_logins.pop(email, None)
+    token_id = uuid4().hex
+    revoked_tokens.update({key: expiry for key, expiry in revoked_tokens.items() if expiry > now})
+    token = jwt.encode({"sub": user.id, "jti": token_id, "exp": now + timedelta(hours=TOKEN_TTL_HOURS)}, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return {"access_token": token, "user": user_value(user)}
 
 
 @app.post("/api/auth/logout", status_code=204, response_class=Response)
-async def logout(user: CurrentUser, session: Session) -> Response:
+async def logout(user: CurrentUser, session: Session, authorization: str | None = Header(default=None)) -> Response:
+    token = authorization.removeprefix("Bearer ") if authorization else ""
+    try:
+        token_id = jwt.get_unverified_claims(token).get("jti")
+        expiry = datetime.fromtimestamp(jwt.get_unverified_claims(token).get("exp"), UTC)
+        if token_id:
+            revoked_tokens[token_id] = expiry
+    except (JWTError, TypeError, ValueError):
+        pass
     if user.driver_id:
         await end_tracking_for_driver(session, user.driver_id, "DRIVER_LOGOUT", user.id)
     return Response(status_code=204)
@@ -364,7 +397,8 @@ async def alerts(_: CurrentUser, session: Session) -> dict[str, Any]:
 
 
 @app.get("/api/vehicles")
-async def list_vehicles(_: CurrentUser, session: Session) -> list[dict[str, Any]]:
+async def list_vehicles(user: CurrentUser, session: Session) -> list[dict[str, Any]]:
+    require(user, "Fleet Manager", "Dispatcher", "Administrator")
     return [vehicle_value(vehicle) for vehicle in (await session.scalars(select(Vehicle).order_by(Vehicle.name))).all()]
 
 
@@ -477,7 +511,8 @@ async def retire_vehicle(vehicle_id: str, user: CurrentUser, session: Session) -
 
 
 @app.get("/api/drivers")
-async def list_drivers(_: CurrentUser, session: Session) -> list[dict[str, Any]]:
+async def list_drivers(user: CurrentUser, session: Session) -> list[dict[str, Any]]:
+    require(user, "Fleet Manager", "Dispatcher", "Safety Officer", "Administrator")
     return [driver_value(driver) for driver in (await session.scalars(select(Driver).order_by(Driver.name))).all()]
 
 
@@ -512,7 +547,8 @@ async def update_driver(driver_id: str, payload: DriverInput, user: CurrentUser,
 
 
 @app.get("/api/trips")
-async def list_trips(_: CurrentUser, session: Session) -> list[dict[str, Any]]:
+async def list_trips(user: CurrentUser, session: Session) -> list[dict[str, Any]]:
+    require(user, "Fleet Manager", "Dispatcher", "Safety Officer", "Administrator")
     trips = (await session.scalars(select(Trip).order_by(Trip.created_at.desc()))).all()
     return [await decorated_trip(session, trip) for trip in trips]
 
@@ -673,7 +709,8 @@ async def cancel_maintenance(maintenance_id: str, user: CurrentUser, session: Se
 
 
 @app.get("/api/finance")
-async def finance(_: CurrentUser, session: Session) -> dict[str, Any]:
+async def finance(user: CurrentUser, session: Session) -> dict[str, Any]:
+    require(user, "Fleet Manager", "Financial Analyst", "Administrator")
     fuel_logs = (await session.scalars(select(FuelLog).order_by(FuelLog.logged_at.desc()))).all()
     expenses = (await session.scalars(select(Expense).order_by(Expense.logged_at.desc()))).all()
     maintenance = (await session.scalars(select(Maintenance))).all()
@@ -705,7 +742,8 @@ async def add_expense(payload: ExpenseInput, user: CurrentUser, session: Session
 
 
 @app.get("/api/analytics")
-async def analytics(_: CurrentUser, session: Session) -> dict[str, Any]:
+async def analytics(user: CurrentUser, session: Session) -> dict[str, Any]:
+    require(user, "Fleet Manager", "Financial Analyst", "Administrator")
     fuel_logs = (await session.scalars(select(FuelLog))).all()
     maintenance = (await session.scalars(select(Maintenance))).all()
     trips = (await session.scalars(select(Trip))).all()
