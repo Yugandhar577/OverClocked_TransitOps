@@ -51,6 +51,13 @@ class Vehicle(Base):
     acquisition_cost: Mapped[float] = mapped_column(Float, nullable=False)
     region: Mapped[str] = mapped_column(String(80), nullable=False, default="Ahmedabad")
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="Available", index=True)
+    brand: Mapped[str] = mapped_column(String(60), nullable=False, default="")
+    model: Mapped[str] = mapped_column(String(60), nullable=False, default="")
+    vin: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    fuel_type: Mapped[str] = mapped_column(String(20), nullable=False, default="Diesel")
+    manufacture_year: Mapped[int | None] = mapped_column(Integer)
+    color: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    photo_url: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
 
 class Driver(Base):
@@ -101,10 +108,42 @@ class Maintenance(Base):
     vehicle_id: Mapped[str] = mapped_column(ForeignKey("vehicles.id"), nullable=False, index=True)
     service_type: Mapped[str] = mapped_column(String(80), nullable=False)
     cost: Mapped[float] = mapped_column(Float, nullable=False)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="Active", index=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="Scheduled", index=True)
     opened_at: Mapped[date] = mapped_column(Date, nullable=False, default=date.today)
     closed_at: Mapped[date | None] = mapped_column(Date)
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    vendor: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    odometer_km: Mapped[float | None] = mapped_column(Float)
+    invoice_reference: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    priority: Mapped[str] = mapped_column(String(20), nullable=False, default="Normal", index=True)
+    due_date: Mapped[date | None] = mapped_column(Date)
+
+
+class VehicleDocument(Base):
+    __tablename__ = "vehicle_documents"
+    __table_args__ = (CheckConstraint("cost >= 0", name="ck_vehicle_documents_cost_nonnegative"),)
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    vehicle_id: Mapped[str] = mapped_column(ForeignKey("vehicles.id"), nullable=False, index=True)
+    document_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    reference_number: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    provider: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    expiry_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    cost: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="Active", index=True)
+
+
+class OdometerLog(Base):
+    __tablename__ = "odometer_logs"
+    __table_args__ = (CheckConstraint("value_km >= 0", name="ck_odometer_logs_value_nonnegative"),)
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    vehicle_id: Mapped[str] = mapped_column(ForeignKey("vehicles.id"), nullable=False, index=True)
+    logged_at: Mapped[date] = mapped_column("date", Date, nullable=False, default=date.today, index=True)
+    value_km: Mapped[float] = mapped_column(Float, nullable=False)
+    source: Mapped[str] = mapped_column(String(30), nullable=False)
+    driver_id: Mapped[str | None] = mapped_column(ForeignKey("drivers.id"), index=True)
 
 
 class FuelLog(Base):
