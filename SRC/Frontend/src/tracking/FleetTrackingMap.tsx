@@ -92,8 +92,12 @@ export function FleetTrackingMap({ vehicles, selectedVehicleId, onSelect, autoFo
       <TileLayer url={mapProvider.tileUrl} attribution={mapProvider.attribution}/>
       <MapController vehicles={vehicles} selectedVehicleId={selectedVehicleId} autoFollow={autoFollow} fitRequest={fitRequest}/>
       <ClusteredVehicleMarkers vehicles={vehicles} selectedVehicleId={selectedVehicleId} onSelect={onSelect}/>
-      {historyLine.length > 1 && <Polyline positions={historyLine} pathOptions={{ color: '#2563eb', weight: 4, opacity: .75 }}/>} 
-      {routeLine.length > 1 && <Polyline positions={routeLine} pathOptions={{ color: '#7c3aed', weight: 3, dashArray: '8 8', opacity: .7 }}/>} 
+      {historyLine.length > 1 && (
+        <Polyline positions={historyLine} pathOptions={{ color: '#2563eb', weight: 4, opacity: .75 }}/>
+      )}
+      {routeLine.length > 1 && (
+        <Polyline positions={routeLine} pathOptions={{ color: '#7c3aed', weight: 3, dashArray: '8 8', opacity: .7 }}/>
+      )}
       {geofences.filter((fence) => fence.is_active).map((fence) => <Circle key={fence.id} center={[fence.center_latitude, fence.center_longitude]} radius={fence.radius_meters} pathOptions={{ color: fence.type === 'RESTRICTED' ? '#dc2626' : '#0f766e', fillOpacity: .08 }}/>) }
     </MapContainer>
   </div>
