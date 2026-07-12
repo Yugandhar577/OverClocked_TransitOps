@@ -6,14 +6,15 @@ import os
 from typing import Annotated, Any, Literal, TypeVar
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from jose import JWTError, jwt
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .database import SessionLocal, engine, get_session
+from .dashboard import RESOURCE_PERMISSION, can, compose_dashboard, permissions_for
 from .models import AuditEvent, Driver, Expense, FuelLog, Maintenance, OdometerLog, Preference, Trip, User, Vehicle, VehicleDocument
 from .seed import password_context, seed_demo_data
 from .tracking import cleanup_expired_locations, end_tracking_for_driver, end_tracking_for_trip, router as tracking_router
@@ -152,6 +153,14 @@ class PreferencesInput(BaseModel):
     map_provider: Literal["openstreetmap", "mapbox", "google"] = "openstreetmap"
     directions_provider: Literal["straight_line", "openrouteservice", "mapbox", "google"] = "straight_line"
     geofence_alerts_enabled: bool = True
+    license_expiry_warning_days: int = Field(default=30, ge=7, le=180)
+    license_expiry_critical_days: int = Field(default=7, ge=1, le=30)
+
+    @model_validator(mode="after")
+    def validate_expiry_windows(self) -> "PreferencesInput":
+        if self.license_expiry_critical_days > self.license_expiry_warning_days:
+            raise ValueError("The critical licence window cannot exceed the warning window.")
+        return self
 
 
 Session = Annotated[AsyncSession, Depends(get_session)]
@@ -239,6 +248,9 @@ async def decorated_maintenance(session: AsyncSession, record: Maintenance) -> d
 
 async def collect_alerts(session: AsyncSession) -> list[dict[str, str]]:
     today = date.today()
+    preferences = await session.get(Preference, 1)
+    warning_days = preferences.license_expiry_warning_days if preferences else 30
+    critical_days = preferences.license_expiry_critical_days if preferences else 7
     alert_items: list[dict[str, str]] = []
     drivers = (await session.scalars(select(Driver))).all()
     vehicles = {vehicle.id: vehicle for vehicle in (await session.scalars(select(Vehicle))).all()}
@@ -248,8 +260,8 @@ async def collect_alerts(session: AsyncSession) -> list[dict[str, str]]:
     for driver in drivers:
         if driver.license_expiry < today:
             alert_items.append({"severity": "critical", "message": f"{driver.name}'s licence expired on {driver.license_expiry:%d %b %Y}.", "entity_type": "driver", "entity_id": driver.id, "link": f"/drivers/{driver.id}"})
-        elif driver.license_expiry <= today + timedelta(days=30):
-            alert_items.append({"severity": "warning", "message": f"{driver.name}'s licence expires on {driver.license_expiry:%d %b %Y}.", "entity_type": "driver", "entity_id": driver.id, "link": f"/drivers/{driver.id}"})
+        elif driver.license_expiry <= today + timedelta(days=warning_days):
+            alert_items.append({"severity": "critical" if driver.license_expiry <= today + timedelta(days=critical_days) else "warning", "message": f"{driver.name}'s licence expires on {driver.license_expiry:%d %b %Y}.", "entity_type": "driver", "entity_id": driver.id, "link": f"/drivers/{driver.id}"})
     for document in documents:
         vehicle = vehicles[document.vehicle_id]
         if document.expiry_date < today:
@@ -308,6 +320,11 @@ def require(user: User, *roles: RoleName) -> None:
         raise HTTPException(status_code=403, detail="Your role does not have permission for this action.")
 
 
+def require_permission(user: User, resource: str) -> None:
+    if not can(user, RESOURCE_PERMISSION[resource]):
+        raise HTTPException(status_code=403, detail="Your role does not have permission to read this resource.")
+
+
 async def audit(session: AsyncSession, user: User, event_type: str, target_type: str, target_id: str, before: dict[str, Any] | None, after: dict[str, Any] | None) -> None:
     session.add(AuditEvent(id=f"audit-{uuid4().hex[:12]}", actor_id=user.id, event_type=event_type, target_type=target_type, target_id=target_id, before_state=before, after_state=after))
 
@@ -324,7 +341,8 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="TransitOps API", version="0.2.0", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+frontend_origins = [value.strip() for value in os.getenv("FRONTEND_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if value.strip()]
+app.add_middleware(CORSMiddleware, allow_origins=frontend_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.include_router(tracking_router)
 
 
@@ -378,32 +396,40 @@ async def logout(user: CurrentUser, session: Session, authorization: str | None 
 
 
 @app.get("/api/dashboard")
-async def dashboard(user: CurrentUser, session: Session) -> dict[str, Any]:
-    vehicles = list((await session.scalars(select(Vehicle))).all())
-    trips = list((await session.scalars(select(Trip))).all())
-    drivers = list((await session.scalars(select(Driver))).all())
-    active_vehicles = [vehicle for vehicle in vehicles if vehicle.status != "Retired"]
-    status_counts = {key: sum(vehicle.status == key for vehicle in vehicles) for key in ["Available", "On Trip", "In Shop", "Retired"]}
-    recent = sorted(trips, key=lambda trip: trip.created_at, reverse=True)[:5]
-    active_maintenance = (await session.scalars(select(Maintenance).where(Maintenance.status.in_(["Scheduled", "In Progress"])))).all()
-    alerts = await collect_alerts(session)
-    return {"kpis": {"activeVehicles": len(active_vehicles), "availableVehicles": status_counts["Available"], "inMaintenance": status_counts["In Shop"], "activeTrips": sum(trip.status in ("Dispatched", "In Progress") for trip in trips), "pendingTrips": sum(trip.status == "Draft" for trip in trips), "driversOnDuty": sum(driver.status == "On Trip" for driver in drivers), "urgentMaintenance": sum(record.priority == "Urgent" for record in active_maintenance), "criticalAlerts": sum(item["severity"] == "critical" for item in alerts), "utilization": round(status_counts["On Trip"] / len(active_vehicles) * 100) if active_vehicles else 0}, "vehicleStatus": [{"name": key, "value": value} for key, value in status_counts.items()], "recentTrips": [await decorated_trip(session, trip) for trip in recent], "viewer": user_value(user)}
+async def dashboard(user: CurrentUser, session: Session, region: str | None = Query(default=None, min_length=2, max_length=80), vehicle_type: str | None = Query(default=None, min_length=2, max_length=80)) -> dict[str, Any]:
+    try:
+        return await compose_dashboard(session, user, region, vehicle_type)
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+
+
+@app.get("/api/auth/permissions")
+async def permission_summary(user: CurrentUser) -> dict[str, Any]:
+    return {"role": user.role.name, "permissions": sorted(permissions_for(user))}
 
 
 @app.get("/api/alerts")
-async def alerts(_: CurrentUser, session: Session) -> dict[str, Any]:
+async def alerts(user: CurrentUser, session: Session) -> dict[str, Any]:
+    require_permission(user, "alerts")
     active_alerts = await collect_alerts(session)
+    if user.role.name == "Safety Officer":
+        active_alerts = [item for item in active_alerts if item["entity_type"] == "driver"]
+    elif user.role.name == "Fleet Manager":
+        active_alerts = [item for item in active_alerts if item["entity_type"] in {"vehicle", "maintenance"}]
+    elif user.role.name in {"Dispatcher", "Financial Analyst", "Driver"}:
+        active_alerts = []
     return {"alerts": active_alerts, "critical_count": sum(item["severity"] == "critical" for item in active_alerts)}
 
 
 @app.get("/api/vehicles")
 async def list_vehicles(user: CurrentUser, session: Session) -> list[dict[str, Any]]:
-    require(user, "Fleet Manager", "Dispatcher", "Administrator")
+    require_permission(user, "vehicles")
     return [vehicle_value(vehicle) for vehicle in (await session.scalars(select(Vehicle).order_by(Vehicle.name))).all()]
 
 
 @app.get("/api/vehicles/{vehicle_id}")
-async def vehicle_detail(vehicle_id: str, _: CurrentUser, session: Session) -> dict[str, Any]:
+async def vehicle_detail(vehicle_id: str, user: CurrentUser, session: Session) -> dict[str, Any]:
+    require_permission(user, "vehicles")
     vehicle = await require_record(session, Vehicle, vehicle_id)
     current_trip = await session.scalar(select(Trip).where(Trip.vehicle_id == vehicle.id, Trip.status == "Dispatched").order_by(Trip.created_at.desc()))
     assigned_driver = await require_record(session, Driver, current_trip.driver_id) if current_trip else None
@@ -512,7 +538,7 @@ async def retire_vehicle(vehicle_id: str, user: CurrentUser, session: Session) -
 
 @app.get("/api/drivers")
 async def list_drivers(user: CurrentUser, session: Session) -> list[dict[str, Any]]:
-    require(user, "Fleet Manager", "Dispatcher", "Safety Officer", "Administrator")
+    require_permission(user, "drivers")
     return [driver_value(driver) for driver in (await session.scalars(select(Driver).order_by(Driver.name))).all()]
 
 
@@ -548,7 +574,7 @@ async def update_driver(driver_id: str, payload: DriverInput, user: CurrentUser,
 
 @app.get("/api/trips")
 async def list_trips(user: CurrentUser, session: Session) -> list[dict[str, Any]]:
-    require(user, "Fleet Manager", "Dispatcher", "Safety Officer", "Administrator")
+    require_permission(user, "trips")
     trips = (await session.scalars(select(Trip).order_by(Trip.created_at.desc()))).all()
     return [await decorated_trip(session, trip) for trip in trips]
 
@@ -633,7 +659,8 @@ async def cancel(trip_id: str, user: CurrentUser, session: Session) -> dict[str,
 
 
 @app.get("/api/maintenance")
-async def list_maintenance(_: CurrentUser, session: Session) -> list[dict[str, Any]]:
+async def list_maintenance(user: CurrentUser, session: Session) -> list[dict[str, Any]]:
+    require_permission(user, "maintenance")
     records = (await session.scalars(select(Maintenance).order_by(Maintenance.opened_at.desc()))).all()
     return [await decorated_maintenance(session, record) for record in records]
 
@@ -710,14 +737,15 @@ async def cancel_maintenance(maintenance_id: str, user: CurrentUser, session: Se
 
 @app.get("/api/finance")
 async def finance(user: CurrentUser, session: Session) -> dict[str, Any]:
-    require(user, "Fleet Manager", "Financial Analyst", "Administrator")
+    require_permission(user, "finance")
     fuel_logs = (await session.scalars(select(FuelLog).order_by(FuelLog.logged_at.desc()))).all()
     expenses = (await session.scalars(select(Expense).order_by(Expense.logged_at.desc()))).all()
     maintenance = (await session.scalars(select(Maintenance))).all()
     vehicle_names = {vehicle.id: vehicle.name for vehicle in (await session.scalars(select(Vehicle))).all()}
     fuel_cost = sum(log.cost for log in fuel_logs)
     maintenance_cost = sum(record.cost for record in maintenance)
-    return {"fuelLogs": [{"id": log.id, "vehicle_id": log.vehicle_id, "vehicle": vehicle_names[log.vehicle_id], "trip_id": log.trip_id, "date": log.logged_at.isoformat(), "liters": log.liters, "cost": log.cost, "odometer_km": log.odometer_km, "vendor": log.vendor} for log in fuel_logs], "expenses": [{"id": item.id, "category": item.category, "amount": item.amount, "vehicle_id": item.vehicle_id, "vehicle": vehicle_names.get(item.vehicle_id, "-"), "trip_id": item.trip_id, "date": item.logged_at.isoformat(), "notes": item.notes} for item in expenses], "operationalCost": fuel_cost + maintenance_cost, "expandedCost": fuel_cost + maintenance_cost + sum(item.amount for item in expenses)}
+    operational_cost = fuel_cost + maintenance_cost + sum(item.amount for item in expenses)
+    return {"fuelLogs": [{"id": log.id, "vehicle_id": log.vehicle_id, "vehicle": vehicle_names[log.vehicle_id], "trip_id": log.trip_id, "date": log.logged_at.isoformat(), "liters": log.liters, "cost": log.cost, "odometer_km": log.odometer_km, "vendor": log.vendor} for log in fuel_logs], "expenses": [{"id": item.id, "category": item.category, "amount": item.amount, "vehicle_id": item.vehicle_id, "vehicle": vehicle_names.get(item.vehicle_id, "-"), "trip_id": item.trip_id, "date": item.logged_at.isoformat(), "notes": item.notes} for item in expenses], "operationalCost": operational_cost, "expandedCost": operational_cost, "costDefinition": "Fuel + maintenance + tolls + miscellaneous expenses"}
 
 
 @app.post("/api/finance/fuel", status_code=201)
@@ -742,29 +770,55 @@ async def add_expense(payload: ExpenseInput, user: CurrentUser, session: Session
 
 
 @app.get("/api/analytics")
-async def analytics(user: CurrentUser, session: Session) -> dict[str, Any]:
-    require(user, "Fleet Manager", "Financial Analyst", "Administrator")
+async def analytics(user: CurrentUser, session: Session, date_from: date | None = None, date_to: date | None = None, vehicle_id: str | None = None) -> dict[str, Any]:
+    require_permission(user, "analytics")
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(status_code=422, detail="date_from must be on or before date_to.")
     fuel_logs = (await session.scalars(select(FuelLog))).all()
     maintenance = (await session.scalars(select(Maintenance))).all()
     trips = (await session.scalars(select(Trip))).all()
-    vehicles = (await session.scalars(select(Vehicle))).all()
+    all_vehicles = (await session.scalars(select(Vehicle))).all()
+    if vehicle_id and vehicle_id not in {vehicle.id for vehicle in all_vehicles}:
+        raise HTTPException(status_code=404, detail="Vehicle not found.")
+    vehicles = [vehicle for vehicle in all_vehicles if not vehicle_id or vehicle.id == vehicle_id]
+    fuel_logs = [item for item in fuel_logs if (not vehicle_id or item.vehicle_id == vehicle_id) and (not date_from or item.logged_at >= date_from) and (not date_to or item.logged_at <= date_to)]
+    maintenance = [item for item in maintenance if (not vehicle_id or item.vehicle_id == vehicle_id) and (not date_from or item.opened_at >= date_from) and (not date_to or item.opened_at <= date_to)]
+    trips = [item for item in trips if (not vehicle_id or item.vehicle_id == vehicle_id) and (not date_from or item.created_at.date() >= date_from) and (not date_to or item.created_at.date() <= date_to)]
+    expenses = (await session.scalars(select(Expense))).all()
+    expenses = [item for item in expenses if (not vehicle_id or item.vehicle_id == vehicle_id) and (not date_from or item.logged_at >= date_from) and (not date_to or item.logged_at <= date_to)]
     fuel_cost, maintenance_cost = sum(item.cost for item in fuel_logs), sum(item.cost for item in maintenance)
     total_litres = sum(item.liters for item in fuel_logs)
     completed_distance = sum((trip.actual_distance_km or trip.planned_distance_km) for trip in trips if trip.status == "Completed")
     active_vehicles = [vehicle for vehicle in vehicles if vehicle.status != "Retired"]
-    revenue = sum(trip.revenue for trip in trips if trip.status in ("Completed", "Dispatched"))
+    revenue = sum(trip.revenue for trip in trips if trip.status == "Completed")
     acquisition_cost = sum(vehicle.acquisition_cost for vehicle in active_vehicles)
-    costs = [{"vehicle": vehicle.name, "cost": sum(item.cost for item in fuel_logs if item.vehicle_id == vehicle.id) + sum(item.cost for item in maintenance if item.vehicle_id == vehicle.id)} for vehicle in vehicles]
-    return {"metrics": {"fuelEfficiency": round(completed_distance / total_litres, 1) if total_litres else None, "utilization": round(sum(vehicle.status == "On Trip" for vehicle in active_vehicles) / len(active_vehicles) * 100) if active_vehicles else 0, "operationalCost": fuel_cost + maintenance_cost, "roi": round((revenue - fuel_cost - maintenance_cost) / acquisition_cost * 100, 1) if acquisition_cost else None}, "revenue": [{"month": "Apr", "amount": 16200}, {"month": "May", "amount": 22400}, {"month": "Jun", "amount": 19500}, {"month": "Jul", "amount": revenue}], "costliestVehicles": sorted(costs, key=lambda item: item["cost"], reverse=True)}
+    costs = [{"vehicle": vehicle.name, "cost": sum(item.cost for item in fuel_logs if item.vehicle_id == vehicle.id) + sum(item.cost for item in maintenance if item.vehicle_id == vehicle.id) + sum(item.amount for item in expenses if item.vehicle_id == vehicle.id)} for vehicle in vehicles]
+    expense_cost = sum(item.amount for item in expenses)
+    operational_cost = fuel_cost + maintenance_cost + expense_cost
+    monthly: dict[str, float] = {}
+    for trip in trips:
+        if trip.status == "Completed":
+            key = trip.completed_at.strftime("%Y-%m") if trip.completed_at else trip.created_at.strftime("%Y-%m")
+            monthly[key] = monthly.get(key, 0) + trip.revenue
+    return {"generated_at": datetime.now(UTC).isoformat(), "scope": {"date_from": date_from.isoformat() if date_from else None, "date_to": date_to.isoformat() if date_to else None, "vehicle_id": vehicle_id}, "metrics": {"fuelEfficiency": round(completed_distance / total_litres, 1) if total_litres else None, "utilization": round(sum(vehicle.status == "On Trip" for vehicle in active_vehicles) / len(active_vehicles) * 100) if active_vehicles else 0, "operationalCost": operational_cost, "roi": round((revenue - operational_cost) / acquisition_cost * 100, 1) if acquisition_cost else None}, "revenue": [{"month": key, "amount": amount} for key, amount in sorted(monthly.items())], "costliestVehicles": sorted(costs, key=lambda item: item["cost"], reverse=True), "filterOptions": {"vehicles": [{"id": vehicle.id, "name": vehicle.name} for vehicle in all_vehicles]}}
 
 
 @app.get("/api/analytics/export")
-async def export_analytics(user: CurrentUser, session: Session) -> Response:
-    require(user, "Fleet Manager", "Financial Analyst", "Administrator")
+async def export_analytics(user: CurrentUser, session: Session, date_from: date | None = None, date_to: date | None = None, vehicle_id: str | None = None) -> Response:
+    require_permission(user, "analytics")
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(status_code=422, detail="date_from must be on or before date_to.")
     fuel_logs = (await session.scalars(select(FuelLog))).all()
     maintenance = (await session.scalars(select(Maintenance))).all()
+    expenses = (await session.scalars(select(Expense))).all()
     vehicles = (await session.scalars(select(Vehicle))).all()
-    rows = ["vehicle,operational_cost", *[f'"{vehicle.name}",{sum(item.cost for item in fuel_logs if item.vehicle_id == vehicle.id) + sum(item.cost for item in maintenance if item.vehicle_id == vehicle.id):.2f}' for vehicle in vehicles]]
+    if vehicle_id and vehicle_id not in {vehicle.id for vehicle in vehicles}:
+        raise HTTPException(status_code=404, detail="Vehicle not found.")
+    fuel_logs = [item for item in fuel_logs if (not vehicle_id or item.vehicle_id == vehicle_id) and (not date_from or item.logged_at >= date_from) and (not date_to or item.logged_at <= date_to)]
+    maintenance = [item for item in maintenance if (not vehicle_id or item.vehicle_id == vehicle_id) and (not date_from or item.opened_at >= date_from) and (not date_to or item.opened_at <= date_to)]
+    expenses = [item for item in expenses if (not vehicle_id or item.vehicle_id == vehicle_id) and (not date_from or item.logged_at >= date_from) and (not date_to or item.logged_at <= date_to)]
+    vehicles = [vehicle for vehicle in vehicles if not vehicle_id or vehicle.id == vehicle_id]
+    rows = ["vehicle,operational_cost", *[f'"{vehicle.name}",{sum(item.cost for item in fuel_logs if item.vehicle_id == vehicle.id) + sum(item.cost for item in maintenance if item.vehicle_id == vehicle.id) + sum(item.amount for item in expenses if item.vehicle_id == vehicle.id):.2f}' for vehicle in vehicles]]
     return Response("\n".join(rows) + "\n", media_type="text/csv", headers={"Content-Disposition": "attachment; filename=transitops-analytics.csv"})
 
 

@@ -205,6 +205,8 @@ class Preference(Base):
     map_provider: Mapped[str] = mapped_column(String(40), nullable=False, default="openstreetmap")
     directions_provider: Mapped[str] = mapped_column(String(40), nullable=False, default="straight_line")
     geofence_alerts_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    license_expiry_warning_days: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    license_expiry_critical_days: Mapped[int] = mapped_column(Integer, nullable=False, default=7)
 
 
 class AuditEvent(Base):
