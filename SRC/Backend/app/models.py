@@ -112,6 +112,7 @@ class FuelLog(Base):
     __table_args__ = (
         CheckConstraint("liters > 0", name="ck_fuel_liters_positive"),
         CheckConstraint("cost > 0", name="ck_fuel_cost_positive"),
+        CheckConstraint("price_per_liter > 0", name="ck_fuel_price_per_liter_positive"),
         CheckConstraint("odometer_km >= 0", name="ck_fuel_odometer_nonnegative"),
     )
 
@@ -121,8 +122,10 @@ class FuelLog(Base):
     logged_at: Mapped[date] = mapped_column("date", Date, nullable=False, default=date.today)
     liters: Mapped[float] = mapped_column(Float, nullable=False)
     cost: Mapped[float] = mapped_column(Float, nullable=False)
+    price_per_liter: Mapped[float] = mapped_column(Float, nullable=False)
     odometer_km: Mapped[float] = mapped_column(Float, nullable=False)
     vendor: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    receipt_image: Mapped[str | None] = mapped_column(String(512))
 
 
 class Expense(Base):

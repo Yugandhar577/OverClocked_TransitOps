@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import './styles.css'
+import { FuelEntryForm } from './FuelEntryForm'
 
 type User = { id: string; name: string; email: string; role: string }
 type Session = { access_token: string; user: User }
@@ -33,13 +34,26 @@ const nav = [
 
 const statusClass = (status: string) => `status status-${status.toLowerCase().replaceAll(' ', '-')}`
 const currency = (value: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value)
-const messageFrom = (error: unknown) => axios.isAxiosError(error) ? error.response?.data?.detail || 'Unable to save this change.' : 'Unable to save this change.'
+const apiOfflineMessage = 'The API is not reachable. Start the FastAPI server on port 8000.'
+const messageFrom = (error: unknown, fallback = 'Unable to save this change.') => axios.isAxiosError(error) ? error.response?.data?.detail || fallback : fallback
+const isSessionFailure = (error: unknown) => {
+  if (!axios.isAxiosError(error)) return false
+  const status = error.response?.status
+  return status === 401 || (status === 404 && error.response?.data?.detail === 'Record not found.')
+}
+const readSavedSession = () => {
+  const saved = localStorage.getItem('transitops-session')
+  if (!saved) return null
+  try {
+    return JSON.parse(saved) as Session
+  } catch {
+    localStorage.removeItem('transitops-session')
+    return null
+  }
+}
 
 function App() {
-  const [session, setSession] = useState<Session | null>(() => {
-    const saved = localStorage.getItem('transitops-session')
-    return saved ? JSON.parse(saved) : null
-  })
+  const [session, setSession] = useState<Session | null>(() => readSavedSession())
   const [page, setPage] = useState('Dashboard')
   const [mobileNav, setMobileNav] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -68,7 +82,13 @@ function App() {
       setDashboard(dash.data); setVehicles(vehicleData.data); setDrivers(driverData.data); setTrips(tripData.data)
       setMaintenance(maintenanceData.data); setFinance(financeData.data); setAnalytics(analyticsData.data); setPreferences(settingsData.data)
     } catch (error) {
-      setNotice(messageFrom(error) === 'Unable to save this change.' ? 'The API is not reachable. Start the FastAPI server on port 8000.' : messageFrom(error))
+      if (isSessionFailure(error)) {
+        localStorage.removeItem('transitops-session')
+        setSession(null)
+        setNotice('')
+        return
+      }
+      setNotice(messageFrom(error, apiOfflineMessage))
     } finally { setLoading(false) }
   }
 
@@ -79,7 +99,7 @@ function App() {
       const result = await api.post('/auth/login', { email, password })
       localStorage.setItem('transitops-session', JSON.stringify(result.data))
       setSession(result.data); setNotice('Signed in to the seeded hackathon workspace.')
-    } catch (error) { throw new Error(messageFrom(error)) }
+    } catch (error) { throw new Error(messageFrom(error, apiOfflineMessage)) }
   }
 
   const logout = () => { localStorage.removeItem('transitops-session'); setSession(null); setPage('Dashboard') }
@@ -159,7 +179,7 @@ function Drivers({ drivers, onAdd }: RecordValue) {
 }
 function Trips({ trips, onAdd, onAction }: RecordValue) { const states = ['Draft', 'Dispatched', 'Completed', 'Cancelled']; return <><Header eyebrow="TRIP DISPATCHER" title="Plan, dispatch, and complete" description="Availability and cargo capacity are checked again by the server at dispatch." action="New trip" onAction={() => onAdd('trip')}/><div className="workflow-note"><ShieldCheck size={18}/><span>Protected workflow: only Available vehicles and valid, Available drivers can dispatch. Cargo must stay within vehicle capacity.</span></div><div className="trip-board">{states.map((state) => <section className="board-column" key={state}><div className="board-title"><span>{state}</span><b>{trips.filter((t: RecordValue) => t.status === state).length}</b></div>{trips.filter((t: RecordValue) => t.status === state).map((trip: RecordValue) => <article className="trip-card" key={trip.id}><div><b>{trip.id}</b><span className={statusClass(trip.status)}>{trip.status}</span></div><h4>{trip.source} <ChevronRight size={15}/> {trip.destination}</h4><p>{trip.vehicle} · {trip.driver}</p><small>{trip.cargo_kg.toLocaleString()} kg · {trip.planned_distance_km} km</small>{state === 'Draft' && <button className="small-primary" onClick={() => onAction(`/trips/${trip.id}/dispatch`, `${trip.id} dispatched. Vehicle and driver are now On Trip.`)}>Dispatch</button>}{state === 'Dispatched' && <div className="card-actions"><button className="small-primary" onClick={() => onAction(`/trips/${trip.id}/complete`, `${trip.id} completed and resources released.`)}>Complete</button><button className="small-secondary" onClick={() => onAction(`/trips/${trip.id}/cancel`, `${trip.id} cancelled and resources released.`)}>Cancel</button></div>}</article>)}</section>)}</div></> }
 function Maintenance({ maintenance, onAdd, onAction }: RecordValue) { return <><Header eyebrow="MAINTENANCE" title="Protect fleet availability" description="Active maintenance immediately moves a vehicle into In Shop." action="Log maintenance" onAction={() => onAdd('maintenance')}/><Table columns={['Vehicle', 'Service', 'Opened', 'Cost', 'Status', 'Action']} rows={maintenance.map((m: RecordValue) => [<b>{m.vehicle}</b>, m.service_type, m.opened_at, currency(m.cost), <span className={statusClass(m.status === 'Active' ? 'In Shop' : 'Completed')}>{m.status}</span>, m.status === 'Active' ? <button className="small-primary" onClick={() => onAction(`/maintenance/${m.id}/close`, `${m.vehicle} is available again.`)}>Close work order</button> : <span className="muted">Closed {m.closed_at}</span>])}/></> }
-function Finance({ finance, onAdd }: RecordValue) { return <><Header eyebrow="FUEL & EXPENSES" title="Operating cost, without guesswork" description="Operational cost is Fuel plus Maintenance. Other expenses stay separately visible." action="Log fuel" onAction={() => onAdd('fuel')} secondary="Add expense" onSecondary={() => onAdd('expense')}/><section className="cost-strip"><div><span>Operational cost</span><b>{currency(finance?.operationalCost || 0)}</b><small>Fuel + maintenance</small></div><div><span>Expanded cost</span><b>{currency(finance?.expandedCost || 0)}</b><small>Includes tolls & misc.</small></div></section><div className="two-tables"><Table title="Fuel logs" columns={['Vehicle', 'Date', 'Litres', 'Cost', 'Vendor']} rows={(finance?.fuelLogs || []).map((f: RecordValue) => [f.vehicle, f.date, `${f.liters} L`, currency(f.cost), f.vendor || '-'])}/><Table title="Other expenses" columns={['Category', 'Vehicle', 'Date', 'Amount', 'Notes']} rows={(finance?.expenses || []).map((e: RecordValue) => [e.category, e.vehicle, e.date, currency(e.amount), e.notes || '-'])}/></div></> }
+function Finance({ finance, onAdd }: RecordValue) { return <><Header eyebrow="FUEL & EXPENSES" title="Operating cost, without guesswork" description="Operational cost is Fuel plus Maintenance. Other expenses stay separately visible." action="Log fuel" onAction={() => onAdd('fuel')} secondary="Add expense" onSecondary={() => onAdd('expense')}/><section className="cost-strip"><div><span>Operational cost</span><b>{currency(finance?.operationalCost || 0)}</b><small>Fuel + maintenance</small></div><div><span>Expanded cost</span><b>{currency(finance?.expandedCost || 0)}</b><small>Includes tolls & misc.</small></div></section><div className="two-tables"><Table title="Fuel logs" columns={['Vehicle', 'Date', 'Litres', 'Rate', 'Cost', 'Vendor', 'Receipt']} rows={(finance?.fuelLogs || []).map((f: RecordValue) => [f.vehicle, f.date, String(f.liters) + ' L', f.price_per_liter ? currency(f.price_per_liter) : '-', currency(f.cost), f.vendor || '-', f.receipt_image ? <a href={String(api.defaults.baseURL).replace(/\/api$/, '') + f.receipt_image} target="_blank" rel="noreferrer">View</a> : '-'])}/><Table title="Other expenses" columns={['Category', 'Vehicle', 'Date', 'Amount', 'Notes']} rows={(finance?.expenses || []).map((e: RecordValue) => [e.category, e.vehicle, e.date, currency(e.amount), e.notes || '-'])}/></div></> }
 function Analytics({ analytics }: RecordValue) { const metrics = analytics?.metrics || {}; return <><Header eyebrow="REPORTS & ANALYTICS" title="Fleet performance, explained" description="Metrics use the same committed operational records as the dashboard."/><section className="kpi-grid analytics-cards">{[['Fuel efficiency', metrics.fuelEfficiency ? `${metrics.fuelEfficiency} km/L` : 'N/A'], ['Fleet utilization', `${metrics.utilization || 0}%`], ['Operational cost', currency(metrics.operationalCost || 0)], ['Vehicle ROI', metrics.roi === null ? 'N/A' : `${metrics.roi}%`]].map(([label, value], index) => <article className="metric-card" key={label}><span>{label}</span><b className={`metric-${index}`}>{value}</b></article>)}</section><section className="dashboard-grid"><article className="panel"><div className="panel-heading"><div><h3>Monthly revenue</h3><p>Completed and active trip revenue</p></div></div><div className="bar-chart"><ResponsiveContainer width="100%" height={260}><BarChart data={analytics?.revenue || []}><CartesianGrid vertical={false} stroke="#e8edf4"/><XAxis dataKey="month" axisLine={false} tickLine={false}/><YAxis hide/><Tooltip formatter={(value) => currency(Number(value))}/><Bar dataKey="amount" fill="#2f7aef" radius={[6,6,0,0]}/></BarChart></ResponsiveContainer></div></article><article className="panel"><div className="panel-heading"><div><h3>Costliest vehicles</h3><p>Fuel plus maintenance</p></div></div><div className="cost-ranking">{(analytics?.costliestVehicles || []).map((item: RecordValue, index: number) => <div key={item.vehicle}><div><span>{index + 1}</span><b>{item.vehicle}</b><strong>{currency(item.cost)}</strong></div><i><em style={{ width: `${Math.max(8, item.cost / Math.max(...analytics.costliestVehicles.map((x: RecordValue) => x.cost)) * 100)}%` }}/></i></div>)}</div></article></section></> }
 function SettingsPage({ user, preferences, onSaveSettings }: RecordValue) {
   const [values, setValues] = useState<RecordValue>(preferences || { depot_name: '', currency: 'INR', distance_unit: 'Kilometres' })
@@ -171,6 +191,7 @@ function FilterBar({ query, onQuery, queryLabel, filters }: { query: string; onQ
 function Table({ title, columns, rows, empty }: { title?: string; columns: string[]; rows: React.ReactNode[][]; empty?: string }) { return <article className="panel table-panel">{title && <div className="panel-heading"><div><h3>{title}</h3></div></div>}<div className="table-scroll"><table><thead><tr>{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{rows.length ? rows.map((row, index) => <tr key={index}>{row.map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}</tr>) : <tr><td colSpan={columns.length} className="empty-cell">{empty || 'No records yet.'}</td></tr>}</tbody></table></div></article> }
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) { return <div className="modal-backdrop"><div className="modal"><div className="modal-heading"><div><p className="eyebrow">NEW RECORD</p><h2>{title}</h2></div><button onClick={onClose} aria-label="Close"><X/></button></div>{children}</div></div> }
 function EntryForm({ kind, vehicles, drivers, onSave }: { kind: string; vehicles: RecordValue[]; drivers: RecordValue[]; onSave: (payload: RecordValue) => void }) {
+  if (kind === 'fuel') return <FuelEntryForm api={api} vehicles={vehicles} onSave={onSave}/>
   const [payload, setPayload] = useState<RecordValue>(() => ({ status: 'Available', region: 'Ahmedabad', license_expiry: '2027-12-31', safety_score: 90, vehicle_id: vehicles.find((v) => v.status === 'Available')?.id || '', driver_id: drivers.find((d) => d.status === 'Available')?.id || '', category: 'Toll' }))
   const set = (key: string, value: string) => setPayload((current) => ({ ...current, [key]: value }))
   const fields: Record<string, [string, string, string?][]> = { vehicle: [['registration','Registration','text'],['name','Vehicle name','text'],['vehicle_type','Type','text'],['capacity_kg','Capacity (kg)','number'],['odometer_km','Odometer (km)','number'],['acquisition_cost','Acquisition cost','number'],['region','Region','text']], driver: [['name','Full name','text'],['license_number','Licence number','text'],['license_category','Licence category','text'],['license_expiry','Licence expiry','date'],['contact','Contact','tel'],['safety_score','Safety score','number'],['region','Region','text']], trip: [['source','Source','text'],['destination','Destination','text'],['cargo_kg','Cargo weight (kg)','number'],['planned_distance_km','Planned distance (km)','number'],['revenue','Expected revenue','number'],['notes','Notes','text']], maintenance: [['service_type','Service type','text'],['cost','Estimated cost','number'],['notes','Notes','text']], fuel: [['liters','Litres','number'],['cost','Total cost','number'],['odometer_km','Odometer (km)','number'],['vendor','Vendor','text']], expense: [['amount','Amount','number'],['notes','Notes','text']] }

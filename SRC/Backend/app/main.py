@@ -7,7 +7,8 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr, Field
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, EmailStr, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,9 +71,18 @@ class FuelInput(BaseModel):
     vehicle_id: str
     liters: float = Field(gt=0)
     cost: float = Field(gt=0)
+    price_per_liter: float | None = Field(default=None, gt=0)
     odometer_km: float = Field(ge=0)
     vendor: str = Field(default="", max_length=80)
     trip_id: str | None = None
+    logged_at: date = Field(default_factory=date.today)
+    receipt_image: str | None = Field(default=None, max_length=512)
+
+    @model_validator(mode="after")
+    def derive_price_per_liter(self) -> "FuelInput":
+        if self.price_per_liter is None:
+            self.price_per_liter = round(self.cost / self.liters, 2)
+        return self
 
 
 class ExpenseInput(BaseModel):
@@ -175,8 +185,24 @@ async def lifespan(_: FastAPI):
         await engine.dispose()
 
 
+from .routes.fuel_ocr_routes import router as fuel_ocr_router
+
+
 app = FastAPI(title="TransitOps API", version="0.2.0", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.mount("/uploads", StaticFiles(directory="app/uploads"), name="uploads")
+app.include_router(fuel_ocr_router)
 
 
 @app.get("/api/health")
@@ -405,7 +431,7 @@ async def finance(_: CurrentUser, session: Session) -> dict[str, Any]:
     vehicle_names = {vehicle.id: vehicle.name for vehicle in (await session.scalars(select(Vehicle))).all()}
     fuel_cost = sum(log.cost for log in fuel_logs)
     maintenance_cost = sum(record.cost for record in maintenance)
-    return {"fuelLogs": [{"id": log.id, "vehicle_id": log.vehicle_id, "vehicle": vehicle_names[log.vehicle_id], "trip_id": log.trip_id, "date": log.logged_at.isoformat(), "liters": log.liters, "cost": log.cost, "odometer_km": log.odometer_km, "vendor": log.vendor} for log in fuel_logs], "expenses": [{"id": item.id, "category": item.category, "amount": item.amount, "vehicle_id": item.vehicle_id, "vehicle": vehicle_names.get(item.vehicle_id, "-"), "trip_id": item.trip_id, "date": item.logged_at.isoformat(), "notes": item.notes} for item in expenses], "operationalCost": fuel_cost + maintenance_cost, "expandedCost": fuel_cost + maintenance_cost + sum(item.amount for item in expenses)}
+    return {"fuelLogs": [{"id": log.id, "vehicle_id": log.vehicle_id, "vehicle": vehicle_names[log.vehicle_id], "trip_id": log.trip_id, "date": log.logged_at.isoformat(), "liters": log.liters, "cost": log.cost, "price_per_liter": log.price_per_liter, "odometer_km": log.odometer_km, "vendor": log.vendor, "receipt_image": log.receipt_image} for log in fuel_logs], "expenses": [{"id": item.id, "category": item.category, "amount": item.amount, "vehicle_id": item.vehicle_id, "vehicle": vehicle_names.get(item.vehicle_id, "-"), "trip_id": item.trip_id, "date": item.logged_at.isoformat(), "notes": item.notes} for item in expenses], "operationalCost": fuel_cost + maintenance_cost, "expandedCost": fuel_cost + maintenance_cost + sum(item.amount for item in expenses)}
 
 
 @app.post("/api/finance/fuel", status_code=201)
@@ -413,7 +439,7 @@ async def add_fuel(payload: FuelInput, user: CurrentUser, session: Session) -> d
     require(user, "Financial Analyst", "Fleet Manager", "Administrator")
     await require_record(session, Vehicle, payload.vehicle_id)
     if payload.trip_id: await require_record(session, Trip, payload.trip_id)
-    record = FuelLog(id=f"f-{uuid4().hex[:8]}", **payload.model_dump(), logged_at=date.today())
+    record = FuelLog(id=f"f-{uuid4().hex[:8]}", **payload.model_dump())
     session.add(record)
     return {"id": record.id, **payload.model_dump(mode="json"), "date": record.logged_at.isoformat()}
 
