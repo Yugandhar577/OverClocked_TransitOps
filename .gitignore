@@ -8,4 +8,5 @@ playwright-report/
 test-results/
 tmp/
 .playwright-mcp/
+SRC/Backend/app/uploads/
 

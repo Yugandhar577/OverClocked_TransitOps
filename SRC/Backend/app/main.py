@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from jose import JWTError, jwt
 from pydantic import BaseModel, EmailStr, Field, model_validator
 from sqlalchemy import select
@@ -123,9 +124,18 @@ class FuelInput(BaseModel):
     vehicle_id: str
     liters: float = Field(gt=0)
     cost: float = Field(gt=0)
+    price_per_liter: float | None = Field(default=None, gt=0)
     odometer_km: float = Field(ge=0)
     vendor: str = Field(default="", max_length=80)
     trip_id: str | None = None
+    logged_at: date = Field(default_factory=date.today)
+    receipt_image: str | None = Field(default=None, max_length=512)
+
+    @model_validator(mode="after")
+    def derive_price_per_liter(self) -> "FuelInput":
+        if self.price_per_liter is None:
+            self.price_per_liter = round(self.cost / self.liters, 2)
+        return self
 
 
 class ExpenseInput(BaseModel):
@@ -343,7 +353,10 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="TransitOps API", version="0.2.0", lifespan=lifespan)
 frontend_origins = [value.strip() for value in os.getenv("FRONTEND_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if value.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=frontend_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.mount("/uploads", StaticFiles(directory="app/uploads", check_dir=False), name="uploads")
 app.include_router(tracking_router)
+from .routes.fuel_ocr_routes import router as fuel_ocr_router
+app.include_router(fuel_ocr_router)
 
 
 @app.middleware("http")
@@ -745,7 +758,7 @@ async def finance(user: CurrentUser, session: Session) -> dict[str, Any]:
     fuel_cost = sum(log.cost for log in fuel_logs)
     maintenance_cost = sum(record.cost for record in maintenance)
     operational_cost = fuel_cost + maintenance_cost + sum(item.amount for item in expenses)
-    return {"fuelLogs": [{"id": log.id, "vehicle_id": log.vehicle_id, "vehicle": vehicle_names[log.vehicle_id], "trip_id": log.trip_id, "date": log.logged_at.isoformat(), "liters": log.liters, "cost": log.cost, "odometer_km": log.odometer_km, "vendor": log.vendor} for log in fuel_logs], "expenses": [{"id": item.id, "category": item.category, "amount": item.amount, "vehicle_id": item.vehicle_id, "vehicle": vehicle_names.get(item.vehicle_id, "-"), "trip_id": item.trip_id, "date": item.logged_at.isoformat(), "notes": item.notes} for item in expenses], "operationalCost": operational_cost, "expandedCost": operational_cost, "costDefinition": "Fuel + maintenance + tolls + miscellaneous expenses"}
+    return {"fuelLogs": [{"id": log.id, "vehicle_id": log.vehicle_id, "vehicle": vehicle_names[log.vehicle_id], "trip_id": log.trip_id, "date": log.logged_at.isoformat(), "liters": log.liters, "cost": log.cost, "price_per_liter": log.price_per_liter, "odometer_km": log.odometer_km, "vendor": log.vendor, "receipt_image": log.receipt_image} for log in fuel_logs], "expenses": [{"id": item.id, "category": item.category, "amount": item.amount, "vehicle_id": item.vehicle_id, "vehicle": vehicle_names.get(item.vehicle_id, "-"), "trip_id": item.trip_id, "date": item.logged_at.isoformat(), "notes": item.notes} for item in expenses], "operationalCost": operational_cost, "expandedCost": operational_cost, "costDefinition": "Fuel + maintenance + tolls + miscellaneous expenses"}
 
 
 @app.post("/api/finance/fuel", status_code=201)
@@ -753,7 +766,7 @@ async def add_fuel(payload: FuelInput, user: CurrentUser, session: Session) -> d
     require(user, "Financial Analyst", "Fleet Manager", "Administrator")
     vehicle = await locked_record(session, Vehicle, payload.vehicle_id)
     trip = await require_record(session, Trip, payload.trip_id) if payload.trip_id else None
-    record = FuelLog(id=f"f-{uuid4().hex[:8]}", **payload.model_dump(), logged_at=date.today())
+    record = FuelLog(id=f"f-{uuid4().hex[:8]}", **payload.model_dump())
     session.add(record)
     await add_odometer_log(session, vehicle, payload.odometer_km, "fuel log", trip.driver_id if trip else None)
     return {"id": record.id, **payload.model_dump(mode="json"), "date": record.logged_at.isoformat()}
